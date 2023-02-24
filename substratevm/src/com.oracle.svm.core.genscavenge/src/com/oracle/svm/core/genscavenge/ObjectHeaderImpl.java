@@ -66,6 +66,7 @@ public final class ObjectHeaderImpl extends ObjectHeader {
     private static final UnsignedWord UNALIGNED_BIT = WordFactory.unsigned(0b00001);
     private static final UnsignedWord REMEMBERED_SET_BIT = WordFactory.unsigned(0b00010);
     private static final UnsignedWord FORWARDED_BIT = WordFactory.unsigned(0b00100);
+    private static final UnsignedWord MARKED_BIT = FORWARDED_BIT; // Reused
 
     /**
      * Optional: per-object identity hash code state to avoid a fixed field, initially implicitly
@@ -388,6 +389,24 @@ public final class ObjectHeaderImpl extends ObjectHeader {
         return header.and(REMEMBERED_SET_BIT).notEqual(0);
     }
 
+    public static void setMarkedBit(Object o) {
+        UnsignedWord header = readHeaderFromObject(o);
+        writeHeaderToObject(o, header.or(MARKED_BIT));
+    }
+
+    public static void clearMarkedBit(Object o) {
+        UnsignedWord header = readHeaderFromObject(o);
+        writeHeaderToObject(o, header.and(MARKED_BIT.not()));
+    }
+
+    public static boolean hasMarkedBit(Object o) {
+        return hasMarkedBit(readHeaderFromObject(o));
+    }
+
+    public static boolean hasMarkedBit(UnsignedWord header) {
+        return header.and(MARKED_BIT).notEqual(0) ;
+    }
+
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     boolean isPointerToForwardedObject(Pointer p) {
         Word header = readHeaderFromPointer(p);
@@ -396,7 +415,7 @@ public final class ObjectHeaderImpl extends ObjectHeader {
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     public static boolean isForwardedHeader(UnsignedWord header) {
-        return header.and(FORWARDED_BIT).notEqual(0);
+        return header.and(FORWARDED_BIT).notEqual(0) && header.and(REMEMBERED_SET_BIT).equal(0); // TODO: Fine?
     }
 
     Object getForwardedObject(Pointer ptr) {
