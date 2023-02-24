@@ -66,6 +66,7 @@ public final class ObjectHeaderImpl extends ObjectHeader {
     private static final UnsignedWord UNALIGNED_BIT = WordFactory.unsigned(0b00001);
     private static final UnsignedWord REMEMBERED_SET_BIT = WordFactory.unsigned(0b00010);
     private static final UnsignedWord FORWARDED_BIT = WordFactory.unsigned(0b00100);
+    private static final UnsignedWord MARKED_BIT = FORWARDED_BIT; // Reused
 
     /**
      * Optional: per-object identity hash code state to avoid a fixed field, initially implicitly
