@@ -383,6 +383,10 @@ public final class Space {
 
         Object copy = copyAlignedObject(original);
         if (copy != null) {
+            // We mustn't install forwarding pointers in old generation space
+            // as we reuse the FORWARDED flag bit for the MARKED flag for marking alive objects.
+            assert !originalSpace.isOldSpace() : "Forwarding pointers aren't allowed in old generation space";
+
             ObjectHeaderImpl.getObjectHeaderImpl().installForwardingPointer(original, copy);
         }
         return copy;
