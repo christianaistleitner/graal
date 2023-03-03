@@ -389,6 +389,27 @@ public final class ObjectHeaderImpl extends ObjectHeader {
         return header.and(REMEMBERED_SET_BIT).notEqual(0);
     }
 
+    public static void setMarkedBit(Object o) {
+        // assert HeapChunk.getSpace(HeapChunk.getEnclosingHeapChunk(o)).isOldSpace();
+        UnsignedWord header = readHeaderFromObject(o);
+        writeHeaderToObject(o, header.or(MARKED_BIT));
+    }
+
+    public static void clearMarkedBit(Object o) {
+        // assert HeapChunk.getSpace(HeapChunk.getEnclosingHeapChunk(o)).isOldSpace();
+        UnsignedWord header = readHeaderFromObject(o);
+        writeHeaderToObject(o, header.and(MARKED_BIT.not()));
+    }
+
+    public static boolean hasMarkedBit(Object o) {
+        // assert HeapChunk.getSpace(HeapChunk.getEnclosingHeapChunk(o)).isOldSpace();
+        return hasMarkedBit(readHeaderFromObject(o));
+    }
+
+    public static boolean hasMarkedBit(UnsignedWord header) {
+        return header.and(MARKED_BIT).notEqual(0);
+    }
+
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     boolean isPointerToForwardedObject(Pointer p) {
         Word header = readHeaderFromPointer(p);

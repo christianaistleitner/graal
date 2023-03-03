@@ -27,8 +27,13 @@ package com.oracle.svm.core.genscavenge;
 import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.EXTREMELY_SLOW_PATH_PROBABILITY;
 import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.probability;
 
+import com.oracle.svm.core.UnmanagedMemoryUtil;
+import com.oracle.svm.core.heap.ReferenceAccess;
+import com.oracle.svm.core.hub.LayoutEncoding;
+import org.graalvm.compiler.word.Word;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
+import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
 
 import com.oracle.svm.core.MemoryWalker;
@@ -41,6 +46,9 @@ import com.oracle.svm.core.heap.ObjectVisitor;
 import com.oracle.svm.core.log.Log;
 import com.oracle.svm.core.thread.VMOperation;
 import com.oracle.svm.core.util.VMError;
+import org.graalvm.word.WordFactory;
+
+import java.io.IOException;
 
 /**
  * The old generation has only one {@link Space} for existing, newly-allocated or promoted objects
@@ -51,6 +59,7 @@ public final class OldGeneration extends Generation {
     private final Space space;
 
     private final GreyObjectsWalker toGreyObjectsWalker = new GreyObjectsWalker();
+    private final CleanupVisitor cleanupVisitor = new CleanupVisitor();
 
     @Platforms(Platform.HOSTED_ONLY.class)
     OldGeneration(String name) {
@@ -77,6 +86,7 @@ public final class OldGeneration extends Generation {
     public Object promoteAlignedObject(Object original, AlignedHeapChunk.AlignedHeader originalChunk, Space originalSpace) {
         if (originalSpace.isOldSpace()) {
             // TODO: Mark objects
+            ObjectHeaderImpl.setMarkedBit(original);
             Log.noopLog().string("promoteAlignedObject (noop): ").object(original).newline().flush();
             return original;
         }
@@ -90,10 +100,10 @@ public final class OldGeneration extends Generation {
     protected Object promoteUnalignedObject(Object original, UnalignedHeapChunk.UnalignedHeader originalChunk, Space originalSpace) {
         assert originalSpace.isFromSpace() || originalSpace.isOldSpace();
         if (!originalSpace.isOldSpace()) {
-            Log.log().string("promoteUnalignedObject (promote): ").object(original).newline().flush();
+            Log.noopLog().string("promoteUnalignedObject (promote): ").object(original).newline().flush();
             getSpace().promoteUnalignedHeapChunk(originalChunk, originalSpace);
         } else {
-            Log.log().string("promoteUnalignedObject (noop): ").object(original).newline().flush();
+            Log.noopLog().string("promoteUnalignedObject (noop): ").object(original).newline().flush();
             // RememberedSet.get().clearRememberedSet(originalChunk);
         }
         return original;
@@ -112,6 +122,7 @@ public final class OldGeneration extends Generation {
     }
 
     void releaseSpaces(ChunkReleaser chunkReleaser) {
+        space.walkObjects(cleanupVisitor);
         // space.report(Log.log(), true);
         // getSpace().releaseChunks(chunkReleaser); TODO: dont free memory here as we would destroy data
     }
@@ -167,5 +178,59 @@ public final class OldGeneration extends Generation {
         }
         RememberedSet.get().enableRememberedSetForChunk(chunk);
         return chunk;
+    }
+
+    private static Object sampleObj16 = new byte[]{};
+    private static Object sampleObj24 = new byte[]{1, 2};
+
+    private class CleanupVisitor implements ObjectVisitor {
+
+        @Override
+        public boolean visitObject(Object obj) {
+            //if (!HeapChunk.getSpace(AlignedHeapChunk.getEnclosingChunk(obj)).isOldSpace()) {
+            //    Log.log().object(HeapChunk.getSpace(AlignedHeapChunk.getEnclosingChunk(obj)));
+            //}
+            if (ObjectHeaderImpl.hasMarkedBit(obj)) {
+                ObjectHeaderImpl.clearMarkedBit(obj);
+                Log.log().string("Cleared").newline().flush();
+            } else {
+                UnsignedWord size = LayoutEncoding.getSizeFromObjectInGC(obj);
+
+                Pointer originalMemory = Word.objectToUntrackedPointer(obj);
+                while (size.aboveOrEqual(16)) {
+                    Log.log().string("Filling ").unsigned(size).string(" bytes").newline().flush();
+                    if (size.unsignedRemainder(16).aboveThan(0)) {
+                        Pointer sampleMemory = Word.objectToUntrackedPointer(sampleObj24);
+                        UnmanagedMemoryUtil.copyLongsForward(sampleMemory, originalMemory, WordFactory.unsigned(24));
+
+                        UnsignedWord size1 = LayoutEncoding.getSizeFromObjectInGC(originalMemory.toObject());
+                        if (size1.notEqual(24)) {
+                            Log.log().string("size not equal, 24 != ").unsigned(size1).newline().flush();
+                        }
+                        size = size.subtract(size1);
+                        originalMemory = originalMemory.add(size1);
+                    } else {
+                        Pointer sampleMemory = Word.objectToUntrackedPointer(sampleObj16);
+                        UnmanagedMemoryUtil.copyLongsForward(sampleMemory, originalMemory, WordFactory.unsigned(16));
+
+                        UnsignedWord size1 = LayoutEncoding.getSizeFromObjectInGC(originalMemory.toObject());
+                        if (size1.notEqual(16)) {
+                            Log.log().string("size not equal, 16 != ").unsigned(size1).newline().flush();
+                        }
+
+                        size = size.subtract(size1);
+                        originalMemory = originalMemory.add(size1);
+                    }
+                }
+
+                if (size.notEqual(0)) {
+                    Log.log().string("oh no, size=").unsigned(size).newline().flush();
+                }
+
+                //Log.log().string("Size that should be reclaimed: ").unsigned(size).newline().flush();
+                // ReferenceAccess.singleton().writeObjectBarrieredAt(obj, WordFactory.zero(), new Object(), true);
+            }
+            return true;
+        }
     }
 }
