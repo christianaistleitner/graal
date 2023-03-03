@@ -89,7 +89,9 @@ final class GreyToBlackObjRefVisitor implements ObjectReferenceVisitor {
         Word header = ohi.readHeaderFromPointer(p);
         if (GCImpl.getGCImpl().isCompleteCollection() || !RememberedSet.get().hasRememberedSet(header)) {
 
-            if (ObjectHeaderImpl.isForwardedHeader(header)) {
+            Space space = HeapChunk.getSpace(HeapChunk.getEnclosingHeapChunk(p, header));
+
+            if (ObjectHeaderImpl.isForwardedHeader(header) && !space.isOldSpace()) {
                 // TODO: reused flag!
 
                 counters.noteForwardedReferent();

@@ -60,6 +60,7 @@ public final class OldGeneration extends Generation {
 
     private final GreyObjectsWalker toGreyObjectsWalker = new GreyObjectsWalker();
     private final CleanupVisitor cleanupVisitor = new CleanupVisitor();
+    private final AllObjectsMarkingVisitor allObjectsMarkingVisitor = new AllObjectsMarkingVisitor();
 
     @Platforms(Platform.HOSTED_ONLY.class)
     OldGeneration(String name) {
@@ -92,7 +93,9 @@ public final class OldGeneration extends Generation {
         }
         assert originalSpace.isFromSpace();
         Log.noopLog().string("promoteAlignedObject (promote): ").object(original).newline().flush();
-        return getSpace().promoteAlignedObject(original, originalSpace);
+        Object copy = getSpace().promoteAlignedObject(original, originalSpace);
+        ObjectHeaderImpl.setMarkedBit(copy);
+        return copy;
     }
 
     @AlwaysInline("GC performance")
@@ -106,6 +109,7 @@ public final class OldGeneration extends Generation {
             Log.noopLog().string("promoteUnalignedObject (noop): ").object(original).newline().flush();
             // RememberedSet.get().clearRememberedSet(originalChunk);
         }
+        UnalignedHeapChunk.walkObjects(originalChunk, allObjectsMarkingVisitor);
         return original;
     }
 
@@ -115,8 +119,10 @@ public final class OldGeneration extends Generation {
         assert originalSpace.isFromSpace();
         if (isAligned) {
             getSpace().promoteAlignedHeapChunk((AlignedHeapChunk.AlignedHeader) originalChunk, originalSpace);
+            AlignedHeapChunk.walkObjects((AlignedHeapChunk.AlignedHeader) originalChunk, allObjectsMarkingVisitor);
         } else {
             getSpace().promoteUnalignedHeapChunk((UnalignedHeapChunk.UnalignedHeader) originalChunk, originalSpace);
+            UnalignedHeapChunk.walkObjects((UnalignedHeapChunk.UnalignedHeader) originalChunk, allObjectsMarkingVisitor);
         }
         return true;
     }
@@ -192,13 +198,13 @@ public final class OldGeneration extends Generation {
             //}
             if (ObjectHeaderImpl.hasMarkedBit(obj)) {
                 ObjectHeaderImpl.clearMarkedBit(obj);
-                Log.log().string("Cleared").newline().flush();
+                Log.noopLog().string("Cleared").newline().flush();
             } else {
                 UnsignedWord size = LayoutEncoding.getSizeFromObjectInGC(obj);
 
                 Pointer originalMemory = Word.objectToUntrackedPointer(obj);
                 while (size.aboveOrEqual(16)) {
-                    Log.log().string("Filling ").unsigned(size).string(" bytes").newline().flush();
+                    Log.noopLog().string("Filling ").unsigned(size).string(" bytes").newline().flush();
                     if (size.unsignedRemainder(16).aboveThan(0)) {
                         Pointer sampleMemory = Word.objectToUntrackedPointer(sampleObj24);
                         UnmanagedMemoryUtil.copyLongsForward(sampleMemory, originalMemory, WordFactory.unsigned(24));
@@ -230,6 +236,15 @@ public final class OldGeneration extends Generation {
                 //Log.log().string("Size that should be reclaimed: ").unsigned(size).newline().flush();
                 // ReferenceAccess.singleton().writeObjectBarrieredAt(obj, WordFactory.zero(), new Object(), true);
             }
+            return true;
+        }
+    }
+
+    private class AllObjectsMarkingVisitor implements ObjectVisitor {
+
+        @Override
+        public boolean visitObject(Object obj) {
+            ObjectHeaderImpl.setMarkedBit(obj);
             return true;
         }
     }
