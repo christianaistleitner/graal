@@ -85,9 +85,13 @@ final class ChunksAccounting {
     }
 
     void report(Log reportLog) {
-        reportLog.string("aligned: ").unsigned(getAlignedChunkBytes()).string("/").unsigned(alignedCount);
-        reportLog.string(" ");
-        reportLog.string("unaligned: ").unsigned(unalignedChunkBytes).string("/").unsigned(unalignedCount);
+        reportLog.string("aligned: ")
+                .unsigned(alignedCount).string(" chunk(s), ")
+                .unsigned(getAlignedChunkBytes()).string(" byte(s)");
+        reportLog.newline();
+        reportLog.string("unaligned: ")
+                .unsigned(unalignedCount).string(" chunk(s), ")
+                .unsigned(unalignedChunkBytes).string(" byte(s)");
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
