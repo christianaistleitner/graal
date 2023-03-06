@@ -58,15 +58,21 @@ final class GreyObjectsWalker {
      * Objects in the Space will be grey, and can have an ObjectVisitor applied to them.
      */
     void setScanStart(Space s) {
-        Log trace = Log.noopLog().string("[Space.GreyObjectsWalker.setScanStart:").string("  s: ").string(s.getName());
         space = s;
-        AlignedHeapChunk.AlignedHeader aChunk = s.getLastAlignedHeapChunk();
-        alignedHeapChunk = aChunk;
-        trace.string("  alignedHeapChunk: ").zhex(alignedHeapChunk).string("  isNull: ").bool(aChunk.isNull());
-        alignedTop = (aChunk.isNonNull() ? HeapChunk.getTopPointer(aChunk) : WordFactory.nullPointer());
-        trace.string("  alignedTop: ").zhex(alignedTop);
+        alignedHeapChunk = s.getLastAlignedHeapChunk();
+        alignedTop = alignedHeapChunk.isNonNull()
+                ? HeapChunk.getTopPointer(alignedHeapChunk)
+                : WordFactory.nullPointer();
         unalignedHeapChunk = s.getLastUnalignedHeapChunk();
-        trace.string("  unalignedChunkPointer: ").zhex(unalignedHeapChunk).string("]").newline();
+
+        Log.noopLog()
+                .string("[Space.GreyObjectsWalker.setScanStart:")
+                .string("  s: ").string(s.getName())
+                .string("  alignedHeapChunk: ").zhex(alignedHeapChunk)
+                .string("  isNull: ").bool(alignedHeapChunk.isNull())
+                .string("  alignedTop: ").zhex(alignedTop)
+                .string("  unalignedChunkPointer: ").zhex(unalignedHeapChunk)
+                .string("]").newline();
     }
 
     /** Compare the snapshot to the current state of the Space to see if there are grey Objects. */

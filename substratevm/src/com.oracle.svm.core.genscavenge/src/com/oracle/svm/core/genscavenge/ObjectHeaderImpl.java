@@ -418,7 +418,7 @@ public final class ObjectHeaderImpl extends ObjectHeader {
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     public static boolean isForwardedHeader(UnsignedWord header) {
-        return header.and(FORWARDED_BIT).notEqual(0);
+        return header.and(FORWARDED_BIT).notEqual(0) && header.and(REMEMBERED_SET_BIT).equal(0); // TODO
     }
 
     Object getForwardedObject(Pointer ptr) {

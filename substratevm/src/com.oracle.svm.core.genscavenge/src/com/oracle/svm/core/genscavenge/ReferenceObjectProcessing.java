@@ -225,7 +225,9 @@ final class ReferenceObjectProcessing {
         if (ObjectHeaderImpl.isForwardedHeader(header)) {
             Space space = HeapChunk.getSpace(HeapChunk.getEnclosingHeapChunk(referentAddr, header));
             if (space.isOldSpace()) {
-                return true;
+                // ReferenceInternals.setReferent(dr, referentAddr);
+                // return true;
+                return false;
             }
             Object forwardedObj = ohi.getForwardedObject(referentAddr);
             ReferenceInternals.setReferent(dr, forwardedObj);

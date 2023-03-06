@@ -24,31 +24,26 @@
  */
 package com.oracle.svm.core.genscavenge;
 
-import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.EXTREMELY_SLOW_PATH_PROBABILITY;
-import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.probability;
-
+import com.oracle.svm.core.AlwaysInline;
+import com.oracle.svm.core.MemoryWalker;
+import com.oracle.svm.core.Uninterruptible;
 import com.oracle.svm.core.UnmanagedMemoryUtil;
-import com.oracle.svm.core.heap.ReferenceAccess;
+import com.oracle.svm.core.genscavenge.GCImpl.ChunkReleaser;
+import com.oracle.svm.core.genscavenge.remset.RememberedSet;
+import com.oracle.svm.core.heap.ObjectVisitor;
 import com.oracle.svm.core.hub.LayoutEncoding;
+import com.oracle.svm.core.log.Log;
+import com.oracle.svm.core.thread.VMOperation;
+import com.oracle.svm.core.util.VMError;
 import org.graalvm.compiler.word.Word;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
-
-import com.oracle.svm.core.MemoryWalker;
-import com.oracle.svm.core.AlwaysInline;
-import com.oracle.svm.core.MemoryWalker;
-import com.oracle.svm.core.Uninterruptible;
-import com.oracle.svm.core.genscavenge.GCImpl.ChunkReleaser;
-import com.oracle.svm.core.genscavenge.remset.RememberedSet;
-import com.oracle.svm.core.heap.ObjectVisitor;
-import com.oracle.svm.core.log.Log;
-import com.oracle.svm.core.thread.VMOperation;
-import com.oracle.svm.core.util.VMError;
 import org.graalvm.word.WordFactory;
 
-import java.io.IOException;
+import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.EXTREMELY_SLOW_PATH_PROBABILITY;
+import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.probability;
 
 /**
  * The old generation has only one {@link Space} for existing, newly-allocated or promoted objects
@@ -66,7 +61,7 @@ public final class OldGeneration extends Generation {
     OldGeneration(String name) {
         super(name);
         int age = HeapParameters.getMaxSurvivorSpaces() + 1;
-        this.space = new Space("Old", true, age);
+        this.space = new Space("Old", false, age);
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
@@ -107,15 +102,16 @@ public final class OldGeneration extends Generation {
             getSpace().promoteUnalignedHeapChunk(originalChunk, originalSpace);
         } else {
             Log.noopLog().string("promoteUnalignedObject (noop): ").object(original).newline().flush();
-            // RememberedSet.get().clearRememberedSet(originalChunk);
+            RememberedSet.get().clearRememberedSet(originalChunk);
         }
-        UnalignedHeapChunk.walkObjects(originalChunk, allObjectsMarkingVisitor);
+        // UnalignedHeapChunk.walkObjects(originalChunk, allObjectsMarkingVisitor);
+        ObjectHeaderImpl.setMarkedBit(original);
         return original;
     }
 
     @Override
     protected boolean promoteChunk(HeapChunk.Header<?> originalChunk, boolean isAligned, Space originalSpace) {
-        Log.log().string("promoteChunk").newline().flush();
+        Log.noopLog().string("promoteChunk").newline().flush();
         assert originalSpace.isFromSpace();
         if (isAligned) {
             getSpace().promoteAlignedHeapChunk((AlignedHeapChunk.AlignedHeader) originalChunk, originalSpace);
@@ -129,7 +125,20 @@ public final class OldGeneration extends Generation {
 
     void releaseSpaces(ChunkReleaser chunkReleaser) {
         space.walkObjects(cleanupVisitor);
-        // space.report(Log.log(), true);
+
+        AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
+        while (aChunk.isNonNull()) {
+            RememberedSet.get().clearRememberedSet(aChunk);
+            aChunk = HeapChunk.getNext(aChunk);
+        }
+
+        UnalignedHeapChunk.UnalignedHeader uChunk = space.getFirstUnalignedHeapChunk();
+        while (uChunk.isNonNull()) {
+            RememberedSet.get().clearRememberedSet(uChunk);
+            uChunk = HeapChunk.getNext(uChunk);
+        }
+
+        // space.report(Log.log(), true).newline();
         // getSpace().releaseChunks(chunkReleaser); TODO: dont free memory here as we would destroy data
     }
 
@@ -196,7 +205,7 @@ public final class OldGeneration extends Generation {
             //if (!HeapChunk.getSpace(AlignedHeapChunk.getEnclosingChunk(obj)).isOldSpace()) {
             //    Log.log().object(HeapChunk.getSpace(AlignedHeapChunk.getEnclosingChunk(obj)));
             //}
-            if (ObjectHeaderImpl.hasMarkedBit(obj)) {
+            if (ObjectHeaderImpl.hasMarkedBit(obj) || !ObjectHeaderImpl.isAlignedObject(obj)) {
                 ObjectHeaderImpl.clearMarkedBit(obj);
                 Log.noopLog().string("Cleared").newline().flush();
             } else {
@@ -205,11 +214,13 @@ public final class OldGeneration extends Generation {
                 Pointer originalMemory = Word.objectToUntrackedPointer(obj);
                 while (size.aboveOrEqual(16)) {
                     Log.noopLog().string("Filling ").unsigned(size).string(" bytes").newline().flush();
+                    Object obj1 = originalMemory.toObject();
                     if (size.unsignedRemainder(16).aboveThan(0)) {
                         Pointer sampleMemory = Word.objectToUntrackedPointer(sampleObj24);
                         UnmanagedMemoryUtil.copyLongsForward(sampleMemory, originalMemory, WordFactory.unsigned(24));
+                        ObjectHeaderImpl.setRememberedSetBit(obj1);
 
-                        UnsignedWord size1 = LayoutEncoding.getSizeFromObjectInGC(originalMemory.toObject());
+                        UnsignedWord size1 = LayoutEncoding.getSizeFromObjectInGC(obj1);
                         if (size1.notEqual(24)) {
                             Log.log().string("size not equal, 24 != ").unsigned(size1).newline().flush();
                         }
@@ -218,8 +229,9 @@ public final class OldGeneration extends Generation {
                     } else {
                         Pointer sampleMemory = Word.objectToUntrackedPointer(sampleObj16);
                         UnmanagedMemoryUtil.copyLongsForward(sampleMemory, originalMemory, WordFactory.unsigned(16));
+                        ObjectHeaderImpl.setRememberedSetBit(obj1);
 
-                        UnsignedWord size1 = LayoutEncoding.getSizeFromObjectInGC(originalMemory.toObject());
+                        UnsignedWord size1 = LayoutEncoding.getSizeFromObjectInGC(obj1);
                         if (size1.notEqual(16)) {
                             Log.log().string("size not equal, 16 != ").unsigned(size1).newline().flush();
                         }

@@ -1114,6 +1114,9 @@ public final class GCImpl implements GC {
                     heap.getOldGeneration().promoteChunk(originalChunk, isAligned, originalSpace);
                 }
             }
+            if (originalSpace.isOldSpace()) {
+                ObjectHeaderImpl.setMarkedBit(referent);
+            }
         }
     }
 
