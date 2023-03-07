@@ -407,7 +407,7 @@ public final class ObjectHeaderImpl extends ObjectHeader {
     }
 
     public static boolean hasMarkedBit(UnsignedWord header) {
-        return header.and(MARKED_BIT).notEqual(0);
+        return header.and(MARKED_BIT).notEqual(0) ;
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)

@@ -87,9 +87,9 @@ final class GreyToBlackObjRefVisitor implements ObjectReferenceVisitor {
         // in a lot of cache misses.
         ObjectHeaderImpl ohi = ObjectHeaderImpl.getObjectHeaderImpl();
         Word header = ohi.readHeaderFromPointer(p);
-        if (GCImpl.getGCImpl().isCompleteCollection() || !RememberedSet.get().hasRememberedSet(header)) {
+        Space space = HeapChunk.getSpace(HeapChunk.getEnclosingHeapChunk(p, header));
+        if ((GCImpl.getGCImpl().isCompleteCollection() && !(space.isOldSpace() && ObjectHeaderImpl.hasMarkedBit(header))) || !RememberedSet.get().hasRememberedSet(header)) {
 
-            Space space = HeapChunk.getSpace(HeapChunk.getEnclosingHeapChunk(p, header));
 
             if (ObjectHeaderImpl.isForwardedHeader(header) && !space.isOldSpace()) {
                 // TODO: reused flag!
@@ -119,6 +119,11 @@ final class GreyToBlackObjRefVisitor implements ObjectReferenceVisitor {
             // The reference will not be updated if a whole chunk is promoted. However, we still
             // might have to dirty the card.
             RememberedSet.get().dirtyCardIfNecessary(holderObject, copy);
+
+            if (space.isOldSpace()) {
+                ObjectHeaderImpl.setMarkedBit(obj);
+                GCImpl.getGCImpl().getGreyToBlackObjectVisitor().visitObject(obj);
+            }
         }
         return true;
     }

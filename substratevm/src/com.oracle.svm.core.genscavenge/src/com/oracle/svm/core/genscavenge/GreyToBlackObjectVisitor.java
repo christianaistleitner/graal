@@ -50,7 +50,8 @@ public final class GreyToBlackObjectVisitor implements ObjectVisitor {
     @Override
     @NeverInline("Non-performance critical version")
     public boolean visitObject(Object o) {
-        throw VMError.shouldNotReachHere("For performance reasons, this should not be called.");
+        // throw VMError.shouldNotReachHere("For performance reasons, this should not be called.");
+        return visitObjectInline(o);
     }
 
     @Override
