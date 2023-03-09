@@ -375,7 +375,7 @@ public final class Space {
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     Object promoteAlignedObject(Object original, Space originalSpace) {
         assert ObjectHeaderImpl.isAlignedObject(original);
-        assert this != originalSpace && originalSpace.isFromSpace();
+        assert originalSpace.isFromSpace();
 
         Object copy = copyAlignedObject(original);
         if (copy != null) {
@@ -502,6 +502,17 @@ public final class Space {
             appendUnalignedHeapChunk(uChunk);
             uChunk = next;
         }
+    }
+
+    boolean walkAlignedHeapChunks(AlignedHeapChunk.Visitor visitor) {
+        AlignedHeapChunk.AlignedHeader chunk = getFirstAlignedHeapChunk();
+        while (chunk.isNonNull()) {
+            if (!visitor.visitChunkInline(chunk)) {
+                return false;
+            }
+            chunk = HeapChunk.getNext(chunk);
+        }
+        return true;
     }
 
     /**

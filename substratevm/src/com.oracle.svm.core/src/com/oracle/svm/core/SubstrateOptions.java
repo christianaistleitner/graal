@@ -829,7 +829,8 @@ public class SubstrateOptions {
 
     @Fold
     public static boolean useRememberedSet() {
-        return !SubstrateOptions.UseEpsilonGC.getValue() && ConcealedOptions.UseRememberedSet.getValue();
+        // TODO: Compacting GC requires +UseRememberedSet as we need it's memory for the brick table...
+        return !SubstrateOptions.UseEpsilonGC.getValue(); //&& ConcealedOptions.UseRememberedSet.getValue();
     }
 
     /** Query these options only through an appropriate method. */
