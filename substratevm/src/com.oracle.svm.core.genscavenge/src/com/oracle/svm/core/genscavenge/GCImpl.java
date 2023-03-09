@@ -443,17 +443,13 @@ public final class GCImpl implements GC {
     }
 
     private static void precondition() {
-        OldGeneration oldGen = HeapImpl.getHeapImpl().getOldGeneration();
-        assert oldGen.getToSpace().isEmpty() : "oldGen.getToSpace() should be empty before a collection.";
     }
 
     private static void postcondition() {
         HeapImpl heap = HeapImpl.getHeapImpl();
         YoungGeneration youngGen = heap.getYoungGeneration();
-        OldGeneration oldGen = heap.getOldGeneration();
         verbosePostCondition();
         assert youngGen.getEden().isEmpty() : "youngGen.getEden() should be empty after a collection.";
-        assert oldGen.getToSpace().isEmpty() : "oldGen.getToSpace() should be empty after a collection.";
     }
 
     private static void verbosePostCondition() {
@@ -492,16 +488,9 @@ public final class GCImpl implements GC {
                     log.string("]").newline();
                 }
             }
-            if ((!oldGen.getToSpace().isEmpty()) || forceForTesting) {
-                log.string("[GCImpl.postcondition: oldGen toSpace should be empty after a collection.").newline();
-                /* Print raw fields before trying to walk the chunk lists. */
-                log.string("  These should all be 0:").newline();
-                log.string("    oldGen toSpace first AlignedChunk:   ").zhex(oldGen.getToSpace().getFirstAlignedHeapChunk()).newline();
-                log.string("    oldGen toSpace last  AlignedChunk:   ").zhex(oldGen.getToSpace().getLastAlignedHeapChunk()).newline();
-                log.string("    oldGen.toSpace first UnalignedChunk: ").zhex(oldGen.getToSpace().getFirstUnalignedHeapChunk()).newline();
-                log.string("    oldGen.toSpace last  UnalignedChunk: ").zhex(oldGen.getToSpace().getLastUnalignedHeapChunk()).newline();
-                oldGen.getToSpace().report(log, true).newline();
-                oldGen.getFromSpace().report(log, true).newline();
+            if (forceForTesting) {
+                log.string("[GCImpl.postcondition: oldGen space should be fine as it is.").newline();
+                oldGen.getSpace().report(log, true).newline();
                 log.string("]").newline();
             }
         }
@@ -718,20 +707,12 @@ public final class GCImpl implements GC {
     private void cheneyScanFromDirtyRoots() {
         Timer cheneyScanFromDirtyRootsTimer = timers.cheneyScanFromDirtyRoots.open();
         try {
-            long startTicks = JfrGCEvents.startGCPhasePause();
-            try {
-                /*
-                 * Move all the chunks in fromSpace to toSpace. That does not make those chunks
-                 * grey, so I have to use the dirty cards marks to blacken them, but that's what
-                 * card marks are for.
-                 */
-                OldGeneration oldGen = HeapImpl.getHeapImpl().getOldGeneration();
-                oldGen.emptyFromSpaceIntoToSpace();
-            } finally {
-                JfrGCEvents.emitGCPhasePauseEvent(getCollectionEpoch(), "Promote Old Generation", startTicks);
-            }
+            /*
+             * All Objects in the Old Generation are "promoted automatically". That does not make those chunks grey,
+             * so I have to use the dirty cards marks to blacken them, but that's what card marks are for.
+             */
 
-            startTicks = JfrGCEvents.startGCPhasePause();
+            long startTicks = JfrGCEvents.startGCPhasePause();
             try {
                 /* Take a snapshot of the heap so that I can visit all the promoted Objects. */
                 /*
@@ -1049,7 +1030,7 @@ public final class GCImpl implements GC {
              * Walk To-Space looking for dirty cards, and within those for old-to-young pointers.
              * Promote any referenced young objects.
              */
-            Space oldGenToSpace = HeapImpl.getHeapImpl().getOldGeneration().getToSpace();
+            Space oldGenToSpace = HeapImpl.getHeapImpl().getOldGeneration().getSpace();
             RememberedSet.get().walkDirtyObjects(oldGenToSpace, greyToBlackObjectVisitor, true);
         } finally {
             blackenDirtyCardRootsTimer.close();
@@ -1160,9 +1141,7 @@ public final class GCImpl implements GC {
 
     private static void swapSpaces() {
         HeapImpl heap = HeapImpl.getHeapImpl();
-        OldGeneration oldGen = heap.getOldGeneration();
         heap.getYoungGeneration().swapSpaces();
-        oldGen.swapSpaces();
     }
 
     private void releaseSpaces() {
