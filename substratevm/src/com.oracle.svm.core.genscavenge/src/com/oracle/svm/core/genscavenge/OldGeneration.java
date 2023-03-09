@@ -27,16 +27,21 @@ package com.oracle.svm.core.genscavenge;
 import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.EXTREMELY_SLOW_PATH_PROBABILITY;
 import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.probability;
 
+import org.graalvm.compiler.word.Word;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
+import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
+import org.graalvm.word.WordFactory;
 
 import com.oracle.svm.core.AlwaysInline;
 import com.oracle.svm.core.MemoryWalker;
 import com.oracle.svm.core.Uninterruptible;
+import com.oracle.svm.core.UnmanagedMemoryUtil;
 import com.oracle.svm.core.genscavenge.GCImpl.ChunkReleaser;
 import com.oracle.svm.core.genscavenge.remset.RememberedSet;
 import com.oracle.svm.core.heap.ObjectVisitor;
+import com.oracle.svm.core.hub.LayoutEncoding;
 import com.oracle.svm.core.log.Log;
 import com.oracle.svm.core.thread.VMOperation;
 import com.oracle.svm.core.util.VMError;
@@ -50,6 +55,8 @@ public final class OldGeneration extends Generation {
     private final Space space;
 
     private final GreyObjectsWalker toGreyObjectsWalker = new GreyObjectsWalker();
+    private final CleanupVisitor cleanupVisitor = new CleanupVisitor();
+    private final AllObjectsMarkingVisitor allObjectsMarkingVisitor = new AllObjectsMarkingVisitor();
 
     @Platforms(Platform.HOSTED_ONLY.class)
     OldGeneration(String name) {
@@ -69,21 +76,29 @@ public final class OldGeneration extends Generation {
     }
 
     /**
-     * Promote an Object.
+     * Promote an Object from {@link YoungGeneration} to {@link OldGeneration}.
      */
     @AlwaysInline("GC performance")
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     @Override
     public Object promoteAlignedObject(Object original, AlignedHeapChunk.AlignedHeader originalChunk, Space originalSpace) {
         assert originalSpace.isFromSpace();
-        return getSpace().promoteAlignedObject(original, originalSpace);
+        Object copy = getSpace().promoteAlignedObject(original, originalSpace);
+        ObjectHeaderImpl.setMarkedBit(copy);
+        return copy;
     }
 
     @AlwaysInline("GC performance")
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     @Override
     protected Object promoteUnalignedObject(Object original, UnalignedHeapChunk.UnalignedHeader originalChunk, Space originalSpace) {
-        getSpace().promoteUnalignedHeapChunk(originalChunk, originalSpace);
+        assert originalSpace.isFromSpace() || originalSpace.isOldSpace();
+        if (originalSpace.isOldSpace()) {
+            RememberedSet.get().clearRememberedSet(originalChunk);
+        } else {
+            getSpace().promoteUnalignedHeapChunk(originalChunk, originalSpace);
+        }
+        ObjectHeaderImpl.setMarkedBit(original);
         return original;
     }
 
@@ -93,13 +108,29 @@ public final class OldGeneration extends Generation {
         assert originalSpace.isFromSpace();
         if (isAligned) {
             getSpace().promoteAlignedHeapChunk((AlignedHeapChunk.AlignedHeader) originalChunk, originalSpace);
+            AlignedHeapChunk.walkObjects((AlignedHeapChunk.AlignedHeader) originalChunk, allObjectsMarkingVisitor);
         } else {
             getSpace().promoteUnalignedHeapChunk((UnalignedHeapChunk.UnalignedHeader) originalChunk, originalSpace);
+            UnalignedHeapChunk.walkObjects((UnalignedHeapChunk.UnalignedHeader) originalChunk, allObjectsMarkingVisitor);
         }
         return true;
     }
 
     void releaseSpaces(ChunkReleaser chunkReleaser) {
+        space.walkObjects(cleanupVisitor);
+
+        AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
+        while (aChunk.isNonNull()) {
+            RememberedSet.get().clearRememberedSet(aChunk);
+            aChunk = HeapChunk.getNext(aChunk);
+        }
+
+        UnalignedHeapChunk.UnalignedHeader uChunk = space.getFirstUnalignedHeapChunk();
+        while (uChunk.isNonNull()) {
+            RememberedSet.get().clearRememberedSet(uChunk);
+            uChunk = HeapChunk.getNext(uChunk);
+        }
+
         // TODO: Don't free memory here as we would destroy data!
     }
 
@@ -160,5 +191,63 @@ public final class OldGeneration extends Generation {
         }
         RememberedSet.get().enableRememberedSetForChunk(chunk);
         return chunk;
+    }
+
+    private static Object sampleObj16 = new byte[]{};
+    private static Object sampleObj24 = new byte[]{1, 2};
+
+    private class CleanupVisitor implements ObjectVisitor {
+
+        @Override
+        public boolean visitObject(Object obj) {
+            if (ObjectHeaderImpl.hasMarkedBit(obj) || !ObjectHeaderImpl.isAlignedObject(obj)) {
+                ObjectHeaderImpl.clearMarkedBit(obj);
+            } else {
+                UnsignedWord size = LayoutEncoding.getSizeFromObjectInGC(obj);
+
+                Pointer originalMemory = Word.objectToUntrackedPointer(obj);
+                while (size.aboveOrEqual(16)) {
+                    Object obj1 = originalMemory.toObject();
+                    if (size.unsignedRemainder(16).aboveThan(0)) {
+                        Pointer sampleMemory = Word.objectToUntrackedPointer(sampleObj24);
+                        UnmanagedMemoryUtil.copyLongsForward(sampleMemory, originalMemory, WordFactory.unsigned(24));
+                        ObjectHeaderImpl.setRememberedSetBit(obj1);
+
+                        UnsignedWord size1 = LayoutEncoding.getSizeFromObjectInGC(obj1);
+                        if (size1.notEqual(24)) {
+                            Log.log().string("size not equal, 24 != ").unsigned(size1).newline().flush();
+                        }
+                        size = size.subtract(size1);
+                        originalMemory = originalMemory.add(size1);
+                    } else {
+                        Pointer sampleMemory = Word.objectToUntrackedPointer(sampleObj16);
+                        UnmanagedMemoryUtil.copyLongsForward(sampleMemory, originalMemory, WordFactory.unsigned(16));
+                        ObjectHeaderImpl.setRememberedSetBit(obj1);
+
+                        UnsignedWord size1 = LayoutEncoding.getSizeFromObjectInGC(obj1);
+                        if (size1.notEqual(16)) {
+                            Log.log().string("size not equal, 16 != ").unsigned(size1).newline().flush();
+                        }
+
+                        size = size.subtract(size1);
+                        originalMemory = originalMemory.add(size1);
+                    }
+                }
+
+                if (size.notEqual(0)) {
+                    Log.log().string("oh no, size=").unsigned(size).newline().flush();
+                }
+            }
+            return true;
+        }
+    }
+
+    private class AllObjectsMarkingVisitor implements ObjectVisitor {
+
+        @Override
+        public boolean visitObject(Object obj) {
+            ObjectHeaderImpl.setMarkedBit(obj);
+            return true;
+        }
     }
 }
