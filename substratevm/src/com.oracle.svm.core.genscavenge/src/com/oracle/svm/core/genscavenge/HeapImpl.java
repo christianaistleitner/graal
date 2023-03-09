@@ -770,7 +770,7 @@ public final class HeapImpl extends Heap {
 
     @Uninterruptible(reason = "Prevent that chunks are freed.")
     private boolean isInOldGen(Pointer ptr) {
-        return findPointerInSpace(oldGeneration.getFromSpace(), ptr) || findPointerInSpace(oldGeneration.getToSpace(), ptr);
+        return findPointerInSpace(oldGeneration.getSpace(), ptr);
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)

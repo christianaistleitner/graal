@@ -434,16 +434,12 @@ public final class GCImpl implements GC {
     }
 
     private static void precondition() {
-        OldGeneration oldGen = HeapImpl.getHeapImpl().getOldGeneration();
-        assert oldGen.getToSpace().isEmpty() : "oldGen.getToSpace() should be empty before a collection.";
     }
 
     private static void postcondition() {
         HeapImpl heap = HeapImpl.getHeapImpl();
         YoungGeneration youngGen = heap.getYoungGeneration();
-        OldGeneration oldGen = heap.getOldGeneration();
         assert youngGen.getEden().isEmpty() : "youngGen.getEden() should be empty after a collection.";
-        assert oldGen.getToSpace().isEmpty() : "oldGen.getToSpace() should be empty after a collection.";
     }
 
     @Fold
@@ -657,20 +653,12 @@ public final class GCImpl implements GC {
     private void cheneyScanFromDirtyRoots() {
         Timer cheneyScanFromDirtyRootsTimer = timers.cheneyScanFromDirtyRoots.open();
         try {
-            long startTicks = JfrGCEvents.startGCPhasePause();
-            try {
-                /*
-                 * Move all the chunks in fromSpace to toSpace. That does not make those chunks
-                 * grey, so I have to use the dirty cards marks to blacken them, but that's what
-                 * card marks are for.
-                 */
-                OldGeneration oldGen = HeapImpl.getHeapImpl().getOldGeneration();
-                oldGen.emptyFromSpaceIntoToSpace();
-            } finally {
-                JfrGCEvents.emitGCPhasePauseEvent(getCollectionEpoch(), "Promote Old Generation", startTicks);
-            }
+            /*
+             * All Objects in the Old Generation are "promoted automatically". That does not make those chunks grey,
+             * so I have to use the dirty cards marks to blacken them, but that's what card marks are for.
+             */
 
-            startTicks = JfrGCEvents.startGCPhasePause();
+            long startTicks = JfrGCEvents.startGCPhasePause();
             try {
                 /* Take a snapshot of the heap so that I can visit all the promoted Objects. */
                 /*
@@ -985,7 +973,7 @@ public final class GCImpl implements GC {
              * Walk To-Space looking for dirty cards, and within those for old-to-young pointers.
              * Promote any referenced young objects.
              */
-            Space oldGenToSpace = HeapImpl.getHeapImpl().getOldGeneration().getToSpace();
+            Space oldGenToSpace = HeapImpl.getHeapImpl().getOldGeneration().getSpace();
             RememberedSet.get().walkDirtyObjects(oldGenToSpace, greyToBlackObjectVisitor, true);
         } finally {
             blackenDirtyCardRootsTimer.close();
@@ -1096,9 +1084,7 @@ public final class GCImpl implements GC {
 
     private static void swapSpaces() {
         HeapImpl heap = HeapImpl.getHeapImpl();
-        OldGeneration oldGen = heap.getOldGeneration();
         heap.getYoungGeneration().swapSpaces();
-        oldGen.swapSpaces();
     }
 
     private void releaseSpaces() {
