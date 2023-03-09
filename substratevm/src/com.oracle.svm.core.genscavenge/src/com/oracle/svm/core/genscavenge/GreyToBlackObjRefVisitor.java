@@ -103,6 +103,11 @@ final class GreyToBlackObjRefVisitor implements ObjectReferenceVisitor {
                 return true;
             }
 
+            if (ObjectHeaderImpl.hasMarkedBit(header)) {
+                // We already visited that object.
+                return true;
+            }
+
             // Promote the Object if necessary, making it at least grey, and ...
             Object obj = p.toObject();
             assert innerOffset < LayoutEncoding.getSizeFromObjectInGC(obj).rawValue();
