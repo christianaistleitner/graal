@@ -127,7 +127,7 @@ public final class GCAccounting {
         YoungGeneration youngGen = heap.getYoungGeneration();
         youngChunkBytesBefore = youngGen.getChunkBytes();
         /* This is called before the collection, so OldSpace is FromSpace. */
-        Space oldSpace = heap.getOldGeneration().getFromSpace();
+        Space oldSpace = heap.getOldGeneration().getSpace();
         oldChunkBytesBefore = oldSpace.getChunkBytes();
         /* Objects are allocated in the young generation. */
         allocatedChunkBytes = allocatedChunkBytes.add(youngGen.getEden().getChunkBytes());
@@ -191,7 +191,7 @@ public final class GCAccounting {
         // This is called after the collection, after the space flip, so OldSpace is FromSpace.
         YoungGeneration youngGen = heap.getYoungGeneration();
         youngChunkBytesAfter = youngGen.getChunkBytes();
-        Space oldSpace = heap.getOldGeneration().getFromSpace();
+        Space oldSpace = heap.getOldGeneration().getSpace();
         oldChunkBytesAfter = oldSpace.getChunkBytes();
         UnsignedWord beforeChunkBytes = youngChunkBytesBefore.add(oldChunkBytesBefore);
         UnsignedWord afterChunkBytes = oldChunkBytesAfter.add(youngChunkBytesAfter);

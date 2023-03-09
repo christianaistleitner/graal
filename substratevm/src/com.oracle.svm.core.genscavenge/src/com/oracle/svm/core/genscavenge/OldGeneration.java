@@ -33,6 +33,7 @@ import org.graalvm.word.UnsignedWord;
 
 import com.oracle.svm.core.MemoryWalker;
 import com.oracle.svm.core.AlwaysInline;
+import com.oracle.svm.core.MemoryWalker;
 import com.oracle.svm.core.Uninterruptible;
 import com.oracle.svm.core.genscavenge.GCImpl.ChunkReleaser;
 import com.oracle.svm.core.genscavenge.remset.RememberedSet;
@@ -42,13 +43,12 @@ import com.oracle.svm.core.thread.VMOperation;
 import com.oracle.svm.core.util.VMError;
 
 /**
- * An OldGeneration has two Spaces, {@link #fromSpace} for existing objects, and {@link #toSpace}
- * for newly-allocated or promoted objects.
+ * The old generation has only one {@link Space} for existing, newly-allocated or promoted objects
+ * and uses a mark–compact algorithm for garbage collection.
  */
 public final class OldGeneration extends Generation {
-    /* This Spaces are final and are flipped by transferring chunks from one to the other. */
-    private final Space fromSpace;
-    private final Space toSpace;
+
+    private final Space space;
 
     private final GreyObjectsWalker toGreyObjectsWalker = new GreyObjectsWalker();
 
@@ -56,34 +56,33 @@ public final class OldGeneration extends Generation {
     OldGeneration(String name) {
         super(name);
         int age = HeapParameters.getMaxSurvivorSpaces() + 1;
-        this.fromSpace = new Space("oldFromSpace", true, age);
-        this.toSpace = new Space("oldToSpace", false, age);
+        this.space = new Space("tenuredSpace", false, age);
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     void tearDown() {
-        fromSpace.tearDown();
-        toSpace.tearDown();
+        space.tearDown();
     }
 
     @Override
     public boolean walkObjects(ObjectVisitor visitor) {
-        return getFromSpace().walkObjects(visitor) && getToSpace().walkObjects(visitor);
+        return getSpace().walkObjects(visitor);
     }
 
-    /** Promote an Object to ToSpace if it is not already in ToSpace. */
+    /**
+     * Promote an Object.
+     */
     @AlwaysInline("GC performance")
     @Override
     public Object promoteAlignedObject(Object original, AlignedHeapChunk.AlignedHeader originalChunk, Space originalSpace) {
         assert originalSpace.isFromSpace();
-        return getToSpace().promoteAlignedObject(original, originalSpace);
+        return getSpace().promoteAlignedObject(original, originalSpace);
     }
 
     @AlwaysInline("GC performance")
     @Override
     protected Object promoteUnalignedObject(Object original, UnalignedHeapChunk.UnalignedHeader originalChunk, Space originalSpace) {
-        assert originalSpace.isFromSpace();
-        getToSpace().promoteUnalignedHeapChunk(originalChunk, originalSpace);
+        getSpace().promoteUnalignedHeapChunk(originalChunk, originalSpace);
         return original;
     }
 
@@ -91,21 +90,24 @@ public final class OldGeneration extends Generation {
     protected boolean promoteChunk(HeapChunk.Header<?> originalChunk, boolean isAligned, Space originalSpace) {
         assert originalSpace.isFromSpace();
         if (isAligned) {
-            getToSpace().promoteAlignedHeapChunk((AlignedHeapChunk.AlignedHeader) originalChunk, originalSpace);
+            getSpace().promoteAlignedHeapChunk((AlignedHeapChunk.AlignedHeader) originalChunk, originalSpace);
         } else {
-            getToSpace().promoteUnalignedHeapChunk((UnalignedHeapChunk.UnalignedHeader) originalChunk, originalSpace);
+            getSpace().promoteUnalignedHeapChunk((UnalignedHeapChunk.UnalignedHeader) originalChunk, originalSpace);
         }
         return true;
     }
 
     void releaseSpaces(ChunkReleaser chunkReleaser) {
-        getFromSpace().releaseChunks(chunkReleaser);
+        // TODO: Don't free memory here as we would destroy data!
     }
 
     void prepareForPromotion() {
-        toGreyObjectsWalker.setScanStart(getToSpace());
+        toGreyObjectsWalker.setScanStart(getSpace());
     }
 
+    /**
+     * @return {@code true} if gray objects still exist
+     */
     boolean scanGreyObjects() {
         if (!toGreyObjectsWalker.haveGreyObjects()) {
             return false;
@@ -117,34 +119,18 @@ public final class OldGeneration extends Generation {
     @Override
     public Log report(Log log, boolean traceHeapChunks) {
         log.string("Old generation: ").indent(true);
-        getFromSpace().report(log, traceHeapChunks).newline();
-        getToSpace().report(log, traceHeapChunks).newline();
+        getSpace().report(log, traceHeapChunks).newline();
         log.redent(false);
         return log;
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
-    Space getFromSpace() {
-        return fromSpace;
-    }
-
-    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
-    Space getToSpace() {
-        return toSpace;
-    }
-
-    void swapSpaces() {
-        assert getFromSpace().isEmpty() : "fromSpace should be empty.";
-        getFromSpace().absorb(getToSpace());
-    }
-
-    /* Extract all the HeapChunks from FromSpace and append them to ToSpace. */
-    void emptyFromSpaceIntoToSpace() {
-        getToSpace().absorb(getFromSpace());
+    Space getSpace() {
+        return space;
     }
 
     boolean walkHeapChunks(MemoryWalker.Visitor visitor) {
-        return getFromSpace().walkHeapChunks(visitor) && getToSpace().walkHeapChunks(visitor);
+        return getSpace().walkHeapChunks(visitor);
     }
 
     /**
@@ -153,9 +139,7 @@ public final class OldGeneration extends Generation {
      */
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     UnsignedWord getChunkBytes() {
-        UnsignedWord fromBytes = getFromSpace().getChunkBytes();
-        UnsignedWord toBytes = getToSpace().getChunkBytes();
-        return fromBytes.add(toBytes);
+        return getSpace().getChunkBytes();
     }
 
     @SuppressWarnings("static-method")
