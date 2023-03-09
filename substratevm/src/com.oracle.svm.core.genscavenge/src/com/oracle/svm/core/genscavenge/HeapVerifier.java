@@ -106,20 +106,9 @@ public final class HeapVerifier {
     }
 
     private static boolean verifyOldGeneration() {
-        boolean success = true;
         OldGeneration oldGeneration = HeapImpl.getHeapImpl().getOldGeneration();
-        Space fromSpace = oldGeneration.getFromSpace();
-        Space toSpace = oldGeneration.getToSpace();
-
-        if (!toSpace.isEmpty()) {
-            Log.log().string("Old generation to-space contains chunks: firstAlignedChunk: ").zhex(toSpace.getFirstAlignedHeapChunk()).string(", firstUnalignedChunk: ")
-                            .zhex(toSpace.getFirstUnalignedHeapChunk()).newline();
-            success = false;
-        }
-
-        success &= verifySpace(fromSpace);
-        success &= verifySpace(toSpace);
-        return success;
+        Space space = oldGeneration.getSpace();
+        return verifySpace(space);
     }
 
     private static boolean verifyRememberedSets() {
@@ -151,13 +140,9 @@ public final class HeapVerifier {
         }
 
         OldGeneration oldGeneration = HeapImpl.getHeapImpl().getOldGeneration();
-        Space toSpace = oldGeneration.getToSpace();
-        success &= rememberedSet.verify(toSpace.getFirstAlignedHeapChunk());
-        success &= rememberedSet.verify(toSpace.getFirstUnalignedHeapChunk());
-
-        Space fromSpace = oldGeneration.getFromSpace();
-        success &= rememberedSet.verify(fromSpace.getFirstAlignedHeapChunk());
-        success &= rememberedSet.verify(fromSpace.getFirstUnalignedHeapChunk());
+        Space space = oldGeneration.getSpace();
+        success &= rememberedSet.verify(space.getFirstAlignedHeapChunk());
+        success &= rememberedSet.verify(space.getFirstUnalignedHeapChunk());
         return success;
     }
 
@@ -259,6 +244,11 @@ public final class HeapVerifier {
 
         if (ObjectHeaderImpl.isForwardedHeader(header)) {
             Log.log().string("Object ").zhex(ptr).string(" has a forwarded header: ").zhex(header).newline();
+            return false;
+        }
+
+        if (ObjectHeaderImpl.hasMarkedBit(header)) {
+            Log.log().string("Object ").zhex(ptr).string(" has a marked header: ").zhex(header).newline();
             return false;
         }
 
