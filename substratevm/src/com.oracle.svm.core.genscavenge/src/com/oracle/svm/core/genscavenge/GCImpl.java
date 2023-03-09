@@ -1016,6 +1016,15 @@ public final class GCImpl implements GC {
         boolean isAligned = ObjectHeaderImpl.isAlignedHeader(header);
         Header<?> originalChunk = getChunk(original, isAligned);
         Space originalSpace = HeapChunk.getSpace(originalChunk);
+
+        if (originalSpace.isOldSpace()) {
+            // Mark objects in the old generation and continue depth-first traversal
+            // as referenced objects aren't colored gray by copying!
+            ObjectHeaderImpl.setMarkedBit(original);
+            greyToBlackObjectVisitor.visitObject(original);
+            return original; // Objects in the old generation cannot be promoted further.
+        }
+
         if (!originalSpace.isFromSpace()) {
             return original;
         }
@@ -1071,6 +1080,9 @@ public final class GCImpl implements GC {
                 if (!promoted) {
                     heap.getOldGeneration().promoteChunk(originalChunk, isAligned, originalSpace);
                 }
+            }
+            if (originalSpace.isOldSpace()) {
+                ObjectHeaderImpl.setMarkedBit(referent);
             }
         }
     }
