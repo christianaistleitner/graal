@@ -31,6 +31,7 @@ import java.lang.ref.Reference;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.SoftReference;
 
+import com.oracle.svm.core.log.Log;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
 import org.graalvm.word.WordFactory;
@@ -227,6 +228,10 @@ final class ReferenceObjectProcessing {
         ObjectHeaderImpl ohi = ObjectHeaderImpl.getObjectHeaderImpl();
         UnsignedWord header = ObjectHeader.readHeaderFromPointer(referentAddr);
         if (ObjectHeaderImpl.isForwardedHeader(header)) {
+            Space space = HeapChunk.getSpace(HeapChunk.getEnclosingHeapChunk(referentAddr, header));
+            if (space.isOldSpace()) {
+                return false;
+            }
             Object forwardedObj = ohi.getForwardedObject(referentAddr);
             ReferenceInternals.setReferent(dr, forwardedObj);
             return true;
