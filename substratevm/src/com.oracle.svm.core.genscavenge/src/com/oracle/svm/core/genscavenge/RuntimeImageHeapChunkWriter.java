@@ -61,6 +61,7 @@ public class RuntimeImageHeapChunkWriter implements ImageHeapChunkWriter {
         header.setOffsetToPreviousChunk(WordFactory.unsigned(offsetToPreviousChunk));
         header.setOffsetToNextChunk(WordFactory.unsigned(offsetToNextChunk));
         header.setIdentityHashSalt(WordFactory.zero(), IdentityHashCodeSupport.IDENTITY_HASHCODE_SALT_LOCATION);
+        header.setFirstRelocationInfo(null);
     }
 
     @Override
