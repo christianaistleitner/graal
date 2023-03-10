@@ -103,6 +103,7 @@ public final class GCAccounting {
     }
 
     public UnsignedWord getOldGenerationAfterChunkBytes() {
+        //Log.log().string("[GCAccounting.getOldGenerationAfterChunkBytes: oldChunkBytesAfter=").unsigned(oldChunkBytesAfter).string("]\n").flush();
         return oldChunkBytesAfter;
     }
 

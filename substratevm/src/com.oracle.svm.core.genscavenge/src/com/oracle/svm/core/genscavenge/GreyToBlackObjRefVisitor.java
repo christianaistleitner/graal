@@ -24,11 +24,6 @@
  */
 package com.oracle.svm.core.genscavenge;
 
-import org.graalvm.compiler.word.Word;
-import org.graalvm.nativeimage.Platform;
-import org.graalvm.nativeimage.Platforms;
-import org.graalvm.word.Pointer;
-
 import com.oracle.svm.core.AlwaysInline;
 import com.oracle.svm.core.Uninterruptible;
 import com.oracle.svm.core.genscavenge.remset.RememberedSet;
@@ -37,13 +32,18 @@ import com.oracle.svm.core.heap.ObjectReferenceVisitor;
 import com.oracle.svm.core.heap.ReferenceAccess;
 import com.oracle.svm.core.hub.LayoutEncoding;
 import com.oracle.svm.core.log.Log;
+import com.oracle.svm.core.snippets.KnownIntrinsics;
+import org.graalvm.compiler.word.Word;
+import org.graalvm.nativeimage.Platform;
+import org.graalvm.nativeimage.Platforms;
+import org.graalvm.word.Pointer;
 
 /**
  * This visitor is handed <em>Pointers to Object references</em> and if necessary it promotes the
  * referenced Object and replaces the Object reference with a forwarding pointer.
- *
+ * <p>
  * This turns an individual Object reference from grey to black.
- *
+ * <p>
  * Since this visitor is used during collection, one instance of it is constructed during native
  * image generation.
  */
@@ -73,8 +73,18 @@ final class GreyToBlackObjRefVisitor implements ObjectReferenceVisitor {
         assert !objRef.isNull();
         counters.noteObjRef();
 
+        Log.noopLog().string("objRef=").zhex(objRef)
+                .string(", innerOffset=").signed(innerOffset)
+                .string(", compressed=").bool(compressed)
+                .string(", holderObject=").object(holderObject)
+                .newline().flush();
+
+        Log.noopLog().string("-> ").unsigned(objRef.readWord(0)).newline().flush();
+
         Pointer offsetP = ReferenceAccess.singleton().readObjectAsUntrackedPointer(objRef, compressed);
         assert offsetP.isNonNull() || innerOffset == 0;
+
+        Log.noopLog().string("A, offsetP=").zhex(offsetP).newline().flush();
 
         Pointer p = offsetP.subtract(innerOffset);
         if (p.isNull()) {
@@ -82,16 +92,23 @@ final class GreyToBlackObjRefVisitor implements ObjectReferenceVisitor {
             return true;
         }
 
+        Log.noopLog().string("B, p=").zhex(p).newline().flush();
+
         if (HeapImpl.getHeapImpl().isInImageHeap(p)) {
             counters.noteNonHeapReferent();
             return true;
         }
+
+        Log.noopLog().string("C\n").flush();
 
         // This is the most expensive check as it accesses the heap fairly randomly, which results
         // in a lot of cache misses.
         ObjectHeaderImpl ohi = ObjectHeaderImpl.getObjectHeaderImpl();
         Word header = ObjectHeader.readHeaderFromPointer(p);
         if (GCImpl.getGCImpl().isCompleteCollection() || !RememberedSet.get().hasRememberedSet(header)) {
+
+            Log.noopLog().string("D\n").flush();
+
 
             if (ObjectHeaderImpl.isForwardedHeader(header)) {
                 counters.noteForwardedReferent();
@@ -102,17 +119,35 @@ final class GreyToBlackObjRefVisitor implements ObjectReferenceVisitor {
                 RememberedSet.get().dirtyCardIfNecessary(holderObject, obj);
                 return true;
             }
+            Log.noopLog().string("E\n").flush();
+
 
             if (ObjectHeaderImpl.hasMarkedBit(header)) {
                 // We already visited that object.
                 return true;
             }
+            Log.noopLog().string("F\n").flush();
+
 
             // Promote the Object if necessary, making it at least grey, and ...
             Object obj = p.toObject();
+            Log.noopLog().string("F2")
+                    .string(", p=").zhex(p)
+                    .string(", objAdr=").zhex(Word.objectToUntrackedPointer(obj))
+                    .string(", class=").zhex(Word.objectToUntrackedPointer(KnownIntrinsics.readHub(obj)))
+                    .string(", class=").zhex(Word.objectToUntrackedPointer(obj.getClass()))
+                    .string(", obj=").object(obj)
+                    .newline().flush();
+
             assert innerOffset < LayoutEncoding.getSizeFromObjectInGC(obj).rawValue();
+            Log.noopLog().string("F3\n").flush();
+
             Object copy = GCImpl.getGCImpl().promoteObject(obj, header);
+            Log.noopLog().string("F4\n").flush();
+
             if (copy != obj) {
+                Log.noopLog().string("F5\n").flush();
+
                 // ... update the reference to point to the copy, making the reference black.
                 counters.noteCopiedReferent();
                 Object offsetCopy = (innerOffset == 0) ? copy : Word.objectToUntrackedPointer(copy).add(innerOffset).toObject();
@@ -120,11 +155,13 @@ final class GreyToBlackObjRefVisitor implements ObjectReferenceVisitor {
             } else {
                 counters.noteUnmodifiedReference();
             }
+            Log.noopLog().string("G\n").flush();
 
             // The reference will not be updated if a whole chunk is promoted. However, we still
             // might have to dirty the card.
             RememberedSet.get().dirtyCardIfNecessary(holderObject, copy);
         }
+        Log.noopLog().string("H\n").flush();
         return true;
     }
 
