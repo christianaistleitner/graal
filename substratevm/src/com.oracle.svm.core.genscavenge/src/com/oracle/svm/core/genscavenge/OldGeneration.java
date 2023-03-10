@@ -116,6 +116,12 @@ public final class OldGeneration extends Generation {
         return true;
     }
 
+    void pinAlignedObject(Object original) {
+        assert HeapChunk.getSpace(HeapChunk.getEnclosingHeapChunk(original)) != space;
+        ObjectHeaderImpl.setMarkedBit(original);
+        // TODO: Pinned objects mustn't move when compressing chunks!
+    }
+
     void releaseSpaces(ChunkReleaser chunkReleaser) {
         space.walkObjects(cleanupVisitor);
 
