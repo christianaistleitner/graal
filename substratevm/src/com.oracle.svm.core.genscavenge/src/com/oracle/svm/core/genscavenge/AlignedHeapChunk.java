@@ -24,6 +24,7 @@
  */
 package com.oracle.svm.core.genscavenge;
 
+import org.graalvm.nativeimage.c.struct.RawField;
 import org.graalvm.nativeimage.c.struct.RawStructure;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
@@ -79,6 +80,15 @@ public final class AlignedHeapChunk {
      */
     @RawStructure
     public interface AlignedHeader extends HeapChunk.Header<AlignedHeader> {
+
+        /**
+         * @return a pointer to the end of the first relocation info. or a null pointer if no gap exists
+         */
+        @RawField
+        Pointer getFirstRelocationInfo();
+
+        @RawField
+        void setFirstRelocationInfo(Pointer head);
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)

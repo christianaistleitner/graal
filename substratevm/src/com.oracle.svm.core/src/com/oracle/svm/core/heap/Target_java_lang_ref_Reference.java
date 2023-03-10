@@ -93,7 +93,7 @@ public final class Target_java_lang_ref_Reference<T> {
      * {@link Target_java_lang_ref_Reference#clear0()} may set this field to null.
      */
     @Alias @RecomputeFieldValue(kind = RecomputeFieldValue.Kind.Custom, declClass = ComputeReferenceValue.class) //
-    @ExcludeFromReferenceMap(reason = "Field is manually processed by the garbage collector.") //
+    @ExcludeFromReferenceMap(reason = "Field is manually processed by the garbage collector.") // TODO: I'm considering to change that...
     T referent;
 
     @SuppressWarnings("unused") //
