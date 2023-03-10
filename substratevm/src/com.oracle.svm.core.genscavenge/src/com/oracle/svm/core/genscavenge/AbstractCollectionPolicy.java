@@ -26,6 +26,8 @@ package com.oracle.svm.core.genscavenge;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import com.oracle.svm.core.heap.GCCause;
+import com.oracle.svm.core.log.Log;
 import org.graalvm.compiler.api.replacements.Fold;
 import org.graalvm.compiler.nodes.PauseNode;
 import org.graalvm.nativeimage.Platform;
@@ -145,6 +147,7 @@ abstract class AbstractCollectionPolicy implements CollectionPolicy {
     @Override
     public void updateSizeParameters() {
         SizeParameters params = computeSizeParameters(sizes);
+        //Log.log().string("AbstractCollectionPolicy.updateSizeParameters: maxOldSize=").unsigned(params.maxOldSize()).newline().flush();
         SizeParameters previous = sizes;
         if (previous != null && params.equal(previous)) {
             return; // nothing to do
@@ -399,6 +402,8 @@ abstract class AbstractCollectionPolicy implements CollectionPolicy {
 
         static SizeParameters get(SizeParameters existing, UnsignedWord maxHeap, UnsignedWord maxYoung, UnsignedWord initialHeap,
                         UnsignedWord initialEden, UnsignedWord initialSurvivor, UnsignedWord minHeap) {
+            //Log.log().string("AbstractCollectionPolicy.SizeParameters.get: maxHeap=")
+            //        .unsigned(maxHeap).string(", maxYoung=").unsigned(maxYoung).newline().flush();
             if (existing != null && existing.matches(maxHeap, maxYoung, initialHeap, initialEden, initialSurvivor, minHeap)) {
                 return existing;
             }
