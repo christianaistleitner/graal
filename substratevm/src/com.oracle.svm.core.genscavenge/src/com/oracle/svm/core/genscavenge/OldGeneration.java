@@ -32,6 +32,7 @@ import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
+import org.graalvm.word.WordBase;
 import org.graalvm.word.WordFactory;
 
 import com.oracle.svm.core.AlwaysInline;
@@ -56,6 +57,7 @@ public final class OldGeneration extends Generation {
 
     private final GreyObjectsWalker toGreyObjectsWalker = new GreyObjectsWalker();
     private final CleanupVisitor cleanupVisitor = new CleanupVisitor();
+    private final SweepVisitor sweepVisitor = new SweepVisitor();
     private final AllObjectsMarkingVisitor allObjectsMarkingVisitor = new AllObjectsMarkingVisitor();
 
     @Platforms(Platform.HOSTED_ONLY.class)
@@ -120,6 +122,9 @@ public final class OldGeneration extends Generation {
     }
 
     void releaseSpaces(ChunkReleaser chunkReleaser) {
+        sweepVisitor.setChunkReleaser(chunkReleaser);
+        space.walkObjects(sweepVisitor);
+
         space.walkObjects(cleanupVisitor);
 
         AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
@@ -197,7 +202,7 @@ public final class OldGeneration extends Generation {
 
         @Override
         public boolean visitObject(Object obj) {
-            if (ObjectHeaderImpl.hasMarkedBit(obj) || !ObjectHeaderImpl.isAlignedObject(obj)) {
+            if (ObjectHeaderImpl.hasMarkedBit(obj)) {
                 ObjectHeaderImpl.clearMarkedBit(obj);
             } else {
                 UnsignedWord size = LayoutEncoding.getSizeFromObjectInGC(obj);
@@ -245,6 +250,55 @@ public final class OldGeneration extends Generation {
         public boolean visitObject(Object obj) {
             ObjectHeaderImpl.setMarkedBit(obj);
             return true;
+        }
+    }
+
+    private class SweepVisitor implements ObjectVisitor {
+
+        private ChunkReleaser chunkReleaser;
+
+        @Override
+        public boolean visitObject(Object obj) {
+            if (ObjectHeaderImpl.hasMarkedBit(obj)) {
+                // ObjectHeaderImpl.clearMarkedBit(obj);
+            } else {
+                if (ObjectHeaderImpl.isAlignedObject(obj)) {
+                    UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInGC(obj);
+                    AlignedHeapChunk.AlignedHeader chunk = AlignedHeapChunk.getEnclosingChunk(obj);
+
+                    Pointer p = Word.objectToUntrackedPointer(obj);
+                    Pointer freeListHead = chunk.getFreeListHead();
+                    if (freeListHead.isNull()) {
+                        // Init free list head
+                        chunk.setFreeListHead(p);
+                        p.writeWord(0, objSize);
+                    } else if (p.equal(freeListHead.readWord(0))) {
+                        // Extend gap
+                        // freeListHead.writeWord(0, p.add(objSize));
+                    } else {
+                        // New gap
+                    }
+                    
+                    boolean ZeroOutForTesting = true;
+                    if (ZeroOutForTesting) {
+                        UnsignedWord offset = WordFactory.unsigned(8);
+                        while (objSize.aboveThan(offset)) {
+                            p.writeWord(offset, WordFactory.nullPointer());
+                            offset = offset.add(8);
+                        }
+                    }
+                } else {
+                    // Release the enclosing unaligned chunk.
+                    UnalignedHeapChunk.UnalignedHeader chunk = UnalignedHeapChunk.getEnclosingChunk(obj);
+                    space.extractUnalignedHeapChunk(chunk);
+                    chunkReleaser.add(chunk);
+                }
+            }
+            return true;
+        }
+
+        public void setChunkReleaser(ChunkReleaser chunkReleaser) {
+            this.chunkReleaser = chunkReleaser;
         }
     }
 }

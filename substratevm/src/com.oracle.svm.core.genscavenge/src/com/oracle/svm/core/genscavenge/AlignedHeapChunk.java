@@ -29,6 +29,7 @@ import org.graalvm.compiler.word.Word;
 import org.graalvm.nativeimage.ImageSingletons;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
+import org.graalvm.nativeimage.c.struct.RawField;
 import org.graalvm.nativeimage.c.struct.RawStructure;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
@@ -81,6 +82,12 @@ public final class AlignedHeapChunk {
      */
     @RawStructure
     public interface AlignedHeader extends HeapChunk.Header<AlignedHeader> {
+
+        @RawField
+        Pointer getFreeListHead();
+
+        @RawField
+        void setFreeListHead(Pointer head);
     }
 
     public static void initialize(AlignedHeader chunk, UnsignedWord chunkSize) {
@@ -169,6 +176,17 @@ public final class AlignedHeapChunk {
         @Override
         public UnsignedWord getAllocationStart(AlignedHeapChunk.AlignedHeader heapChunk) {
             return getObjectsStart(heapChunk);
+        }
+    }
+
+    static final class FreeList {
+
+        private FreeList(){
+            // all static
+        }
+
+        void writeAt(Pointer p, UnsignedWord size) {
+
         }
     }
 }
