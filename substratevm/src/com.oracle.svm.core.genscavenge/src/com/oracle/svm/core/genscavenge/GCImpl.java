@@ -1088,11 +1088,11 @@ public final class GCImpl implements GC {
                     }
                 }
                 if (!promoted) {
+                    // Promote the whole chunk as fallback.
                     heap.getOldGeneration().promoteChunk(originalChunk, isAligned, originalSpace);
                 }
-            }
-            if (originalSpace.isOldSpace()) {
-                ObjectHeaderImpl.setMarkedBit(referent);
+            } else if (originalSpace.isOldSpace()) {
+                heap.getOldGeneration().pinAlignedObject(referent);
             }
         }
     }
