@@ -257,10 +257,15 @@ public final class OldGeneration extends Generation {
 
         private ChunkReleaser chunkReleaser;
 
+        private Pointer lastGapPointer = WordFactory.nullPointer();
+
         @Override
         public boolean visitObject(Object obj) {
             if (ObjectHeaderImpl.hasMarkedBit(obj)) {
-                // ObjectHeaderImpl.clearMarkedBit(obj);
+                ObjectHeaderImpl.clearMarkedBit(obj);
+                UnsignedWord lastGapInfo = lastGapPointer.readWord(0);
+                long upper4B = 0xFF_FF_FF_FF_00_00_00_00;
+                if (lastGapInfo.and(WordFactory.unsigned((long)))
             } else {
                 if (ObjectHeaderImpl.isAlignedObject(obj)) {
                     UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInGC(obj);
@@ -272,11 +277,21 @@ public final class OldGeneration extends Generation {
                         // Init free list head
                         chunk.setFreeListHead(p);
                         p.writeWord(0, objSize);
-                    } else if (p.equal(freeListHead.readWord(0))) {
-                        // Extend gap
-                        // freeListHead.writeWord(0, p.add(objSize));
+                        lastGapPointer = p;
                     } else {
-                        // New gap
+                        if (lastGapPointer.isNull()) {
+                            lastGapPointer = freeListHead;
+                        }
+                        UnsignedWord lastGapSize = lastGapPointer.readWord(0);
+                        if (lastGapPointer.add(lastGapSize).equal(p)) {
+                            // Extend gap
+                            lastGapPointer.writeWord(0, lastGapSize.add(objSize));
+                        } else {
+                            // New gap
+                            assert lastGapPointer.isNonNull();
+                            lastGapPointer = p;
+                            lastGapPointer.writeWord(0, objSize);
+                        }
                     }
                     
                     boolean ZeroOutForTesting = true;
