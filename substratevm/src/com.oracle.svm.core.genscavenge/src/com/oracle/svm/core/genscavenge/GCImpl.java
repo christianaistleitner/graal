@@ -1125,7 +1125,7 @@ public final class GCImpl implements GC {
 
         heap.getYoungGeneration().releaseSpaces(chunkReleaser);
         if (completeCollection) {
-            heap.getOldGeneration().releaseSpaces(chunkReleaser);
+            heap.getOldGeneration().compactAndReleaseSpaces(chunkReleaser);
         }
     }
 

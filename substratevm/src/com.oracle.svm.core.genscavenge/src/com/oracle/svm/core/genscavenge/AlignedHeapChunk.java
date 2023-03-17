@@ -83,11 +83,14 @@ public final class AlignedHeapChunk {
     @RawStructure
     public interface AlignedHeader extends HeapChunk.Header<AlignedHeader> {
 
+        /**
+         * @return a pointer to the end of the first relocation info. or a null pointer if no gap exists
+         */
         @RawField
-        Pointer getFreeListHead();
+        Pointer getFirstRelocationInfo();
 
         @RawField
-        void setFreeListHead(Pointer head);
+        void setFirstRelocationInfo(Pointer head);
     }
 
     public static void initialize(AlignedHeader chunk, UnsignedWord chunkSize) {
