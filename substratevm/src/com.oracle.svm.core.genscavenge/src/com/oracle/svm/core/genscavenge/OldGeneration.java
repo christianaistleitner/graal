@@ -29,6 +29,7 @@ import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.SLOW_PAT
 import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.VERY_SLOW_PATH_PROBABILITY;
 import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.probability;
 
+import com.oracle.svm.core.NeverInline;
 import com.oracle.svm.core.UnmanagedMemoryUtil;
 import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.heap.ObjectReferenceVisitor;
@@ -150,14 +151,17 @@ public final class OldGeneration extends Generation {
         }
 
         // Phase 1: Compute and write relocation info
+        Log.log().string("[OldGeneration.compactAndReleaseSpaces: planning phase]").newline().flush();
         AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
         while (aChunk.isNonNull()) {
+            Log.log().string("planning chunk=").zhex(aChunk).newline().flush();
             planningVisitor.init(aChunk);
             RelocationInfo.walkObjects(aChunk, planningVisitor);
             aChunk = HeapChunk.getNext(aChunk);
         }
 
         // Phase 2: Fix object references
+        Log.log().string("[OldGeneration.compactAndReleaseSpaces: fixing phase]").newline().flush();
         aChunk = space.getFirstAlignedHeapChunk();
         while (aChunk.isNonNull()) {
             fixingVisitor.setChunk(aChunk);
@@ -166,12 +170,20 @@ public final class OldGeneration extends Generation {
         }
 
         // Phase 3: Copy objects to their new location
+        Log.log().string("[OldGeneration.compactAndReleaseSpaces: compacting phase]").newline().flush();
         aChunk = space.getFirstAlignedHeapChunk();
         while (aChunk.isNonNull()) {
+            Log.log().string("[OldGeneration.compactAndReleaseSpaces: compacting phase, chunk=").zhex(aChunk)
+                    .string(", oldTopOffset=").zhex(aChunk.getTopOffset())
+                    .string(", firstRelocInfo=").zhex(aChunk.getFirstRelocationInfo())
+                    .string("]").newline().flush();
             compactingVisitor.setChunk(aChunk);
             RelocationInfo.walkObjects(aChunk, compactingVisitor);
             RememberedSet.get().clearRememberedSet(aChunk);
             aChunk.setFirstRelocationInfo(null);
+            Log.log().string("[OldGeneration.compactAndReleaseSpaces: compacting phase, chunk=").zhex(aChunk)
+                    .string(", newTopOffset=").zhex(aChunk.getTopOffset())
+                    .string("]").newline().flush();
             aChunk = HeapChunk.getNext(aChunk);
         }
     }
@@ -246,17 +258,20 @@ public final class OldGeneration extends Generation {
 
         private AlignedHeapChunk.AlignedHeader chunk;
 
-        private int gapSize = 0;
+        private UnsignedWord gapSize = WordFactory.zero();
 
-        @Override
+        @NeverInline("Debug")
         public boolean visitObject(Object obj) {
+            //Log.log().string("B").newline().flush();
             Pointer objPointer = Word.objectToUntrackedPointer(obj);
-            //Log.log().string("visiting ").zhex(objPointer).newline().flush();
             UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInGC(obj);
             if (ObjectHeaderImpl.hasMarkedBit(obj)) {
                 ObjectHeaderImpl.clearMarkedBit(obj);
-                if (gapSize != 0) {
+                if (gapSize.notEqual(0)) {
                     if (relocationInfoPointer.isNull()) {
+                        if (chunk.isNull()){
+                            Log.log().string("Nooooo! chunk=").zhex(chunk).newline().flush();
+                        }
                         chunk.setFirstRelocationInfo(objPointer);
                     } else {
                         int offset = (int) objPointer.subtract(relocationInfoPointer).rawValue();
@@ -269,8 +284,9 @@ public final class OldGeneration extends Generation {
                                 .newline().flush();
                     }
                     relocationInfoPointer = objPointer;
+                    Log.log().string("new relocationInfoPointer= ").zhex(relocationInfoPointer).newline().flush();
                     RelocationInfo.writeRelocationPointer(relocationInfoPointer, relocationPointer);
-                    RelocationInfo.writeGapSize(relocationInfoPointer, gapSize);
+                    RelocationInfo.writeGapSize(relocationInfoPointer, (int) gapSize.rawValue());
                     RelocationInfo.writeNextPlugOffset(relocationInfoPointer, 0);
 
                     Log.log().string("Wrote relocation info at ").zhex(relocationInfoPointer)
@@ -279,21 +295,11 @@ public final class OldGeneration extends Generation {
                             .string(": nextPlugOffset=").zhex(0)
                             .newline().flush();
 
-                    gapSize = 0;
+                    gapSize = WordFactory.zero();
                 }
                 relocationPointer = relocationPointer.add(getMovedObjectSize(obj));
             } else {
-                gapSize += objSize.rawValue();
-
-                // WIP: do not zero out as the walker can't handle it
-                boolean ZeroOutForTesting = false;
-                if (ZeroOutForTesting) {
-                    UnsignedWord offset = WordFactory.zero();
-                    while (objSize.aboveThan(offset)) {
-                        objPointer.writeWord(offset, WordFactory.zero());
-                        offset = offset.add(8);
-                    }
-                }
+                gapSize = gapSize.add(objSize);
             }
             return true;
         }
@@ -301,7 +307,6 @@ public final class OldGeneration extends Generation {
         public void init(AlignedHeapChunk.AlignedHeader chunk) {
             this.chunk = chunk;
             this.relocationPointer = AlignedHeapChunk.getObjectsStart(chunk);
-            chunk.setFirstRelocationInfo(WordFactory.nullPointer());
         }
     }
 
@@ -407,9 +412,19 @@ public final class OldGeneration extends Generation {
                 } {
                     nextRelocationInfoPointer = WordFactory.nullPointer();
                 }
+                Log.log().string("Jumped relocation info, current=").zhex(relocationInfoPointer)
+                        .string(", next=").zhex(nextRelocationInfoPointer)
+                        .newline().flush();
             }
 
-            Pointer newLocation = RelocationInfo.readRelocationPointer(relocationInfoPointer);
+            Pointer newLocation = objPointer.subtract(relocationInfoPointer).add(RelocationInfo.readRelocationPointer(relocationInfoPointer));
+
+            Log.log().string("New relocation")
+                    .string(", newLocation=").zhex(newLocation)
+                    .string(", objPointer=").zhex(objPointer)
+                    .string(", relocationInfoPointer=").zhex(relocationInfoPointer)
+                    .string(", relocationPointer=").zhex(RelocationInfo.readRelocationPointer(relocationInfoPointer))
+                    .newline().flush();
 
             UnsignedWord copySize = copyObject(obj, newLocation);
 
@@ -433,7 +448,7 @@ public final class OldGeneration extends Generation {
         }
     }
 
-    private UnsignedWord getMovedObjectSize(Object obj) {
+    private static UnsignedWord getMovedObjectSize(Object obj) {
         if (!ConfigurationValues.getObjectLayout().hasFixedIdentityHashField()) {
             Word header = ObjectHeaderImpl.readHeaderFromObject(obj);
             if (probability(SLOW_PATH_PROBABILITY, ObjectHeaderImpl.hasIdentityHashFromAddressInline(header))) {
@@ -470,14 +485,15 @@ public final class OldGeneration extends Generation {
          * later on anyways (the card table is also updated at that point if necessary).
          */
         Pointer originalMemory = Word.objectToUntrackedPointer(obj);
-        Log.log().string("Copying object of size ").unsigned(originalSize)
-                .string(" from ").zhex(originalMemory)
-                .string(" to ").zhex(dest)
+        Log.log().string("Copying object from ").zhex(originalMemory).character('-').zhex(originalMemory.add(originalSize))
+                .string(" (").unsigned(originalSize).string(" B)")
+                .string(" to ").zhex(dest).character('-').zhex(dest.add(copySize))
+                .string(" (").unsigned(copySize).string(" B)")
                 .newline().flush();
-        UnmanagedMemoryUtil.copyLongsForward(originalMemory, dest, originalSize);
+        UnmanagedMemoryUtil.copyLongsForward(originalMemory, dest, copySize);
 
-        Object copy = dest.toObject();
         if (probability(SLOW_PATH_PROBABILITY, addIdentityHashField)) {
+            Object copy = dest.toObject();
             // Must do first: ensures correct object size below and in other places
             int value = IdentityHashCodeSupport.computeHashCodeFromAddress(obj);
             int offset = LayoutEncoding.getOptionalIdentityHashOffset(copy);
@@ -580,31 +596,27 @@ public final class OldGeneration extends Generation {
             Pointer cursor = AlignedHeapChunk.getObjectsStart(chunkHeader);
             Pointer top = HeapChunk.getTopPointer(chunkHeader); // top cannot move in this case
             Pointer relocationInfo = chunkHeader.getFirstRelocationInfo();
-            Pointer gap = WordFactory.nullPointer();
-
-            if (relocationInfo.isNonNull()) {
-                int gapSize = RelocationInfo.readGapSize(relocationInfo);
-                gap = relocationInfo.subtract(gapSize);
-            }
 
             while (cursor.belowThan(top)) {
-                if (gap.isNonNull() && cursor.aboveOrEqual(gap)) {
-                    cursor = relocationInfo;
-                    relocationInfo = RelocationInfo.getNextRelocationInfo(relocationInfo);
 
-                    if (relocationInfo.isNonNull()) {
-                        int gapSize = RelocationInfo.readGapSize(relocationInfo);
-                        gap = relocationInfo.subtract(gapSize);
-                    } else {
-                        gap = WordFactory.nullPointer();
+                // jump gaps
+                if (relocationInfo.isNonNull()) {
+                    int gapSize = RelocationInfo.readGapSize(relocationInfo);
+                    if (cursor.aboveOrEqual(relocationInfo.subtract(gapSize))) {
+                        cursor = relocationInfo;
+                        relocationInfo = RelocationInfo.getNextRelocationInfo(relocationInfo);
+                        continue;
                     }
                 }
 
                 Object obj = cursor.toObject();
-                if (!visitor.visitObjectInline(obj)) {
+                UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj);
+
+                if (!visitor.visitObject(obj)) {
                     return;
                 }
-                cursor = cursor.add(LayoutEncoding.getSizeFromObjectInlineInGC(obj));
+
+                cursor = cursor.add(objSize);
             }
         }
     }
