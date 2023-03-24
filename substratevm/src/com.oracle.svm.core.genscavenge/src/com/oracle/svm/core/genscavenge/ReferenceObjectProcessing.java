@@ -32,6 +32,8 @@ import java.lang.ref.ReferenceQueue;
 import java.lang.ref.SoftReference;
 
 import com.oracle.svm.core.log.Log;
+import org.graalvm.compiler.api.directives.GraalDirectives;
+import org.graalvm.compiler.word.Word;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
 import org.graalvm.word.WordFactory;
@@ -49,7 +51,7 @@ import com.oracle.svm.core.util.UnsignedUtils;
 /** Discovers and handles {@link Reference} objects during garbage collection. */
 final class ReferenceObjectProcessing {
     /** Head of the linked list of discovered references that need to be revisited. */
-    private static Reference<?> rememberedRefsList;
+    static Reference<?> rememberedRefsList;
 
     /**
      * For a {@link SoftReference}, the longest duration after its last access to keep its referent
@@ -116,7 +118,17 @@ final class ReferenceObjectProcessing {
             return;
         }
         Object refObject = referentAddr.toObject();
-        if (willSurviveThisCollection(refObject)) {
+        //if (willRequireOldGenFixup(refObject)) {
+        //    Reference<?> next = (rememberedRefsList != null) ? rememberedRefsList : dr;
+        //    ReferenceInternals.setNextDiscovered(dr, next);
+        //    rememberedRefsList = dr;
+//
+        //    Log.log().string("Added element to remembered references list, dr=").zhex(Word.objectToUntrackedPointer(obj))
+        //            .string(", ref=").zhex(referentAddr).newline().flush();
+//
+        //    return;
+        //}
+        if (willSurviveThisCollection(refObject) && !willRequireOldGenFixup(refObject)) {
             // Referent is in a to-space. So, this is either an object that got promoted without
             // being moved or an object in the old gen.
             RememberedSet.get().dirtyCardIfNecessary(dr, refObject);
@@ -133,7 +145,13 @@ final class ReferenceObjectProcessing {
                 // Important: we need to pass the reference object as holder so that the remembered
                 // set can be updated accordingly!
                 refVisitor.visitObjectReference(ReferenceInternals.getReferentFieldAddress(dr), true, dr);
-                return; // referent will survive and referent field has been updated
+                refObject = ReferenceInternals.getReferentPointer(dr).toObject(); // maybe promoted!
+                if (willRequireOldGenFixup(refObject)) {
+                    Log.log().string("Added element to remembered references list, dr=").zhex(Word.objectToUntrackedPointer(obj))
+                            .string(", ref=").object(refObject).newline().flush();
+                } else {
+                    return; // referent will survive and referent field has been updated
+                }
             }
         }
 
@@ -203,6 +221,9 @@ final class ReferenceObjectProcessing {
             return true;
         }
         Object refObject = refPointer.toObject();
+        if (willRequireOldGenFixup(refObject)) {
+            Log.log().string("Would require fixup!").newline().flush();
+        }
         if (willSurviveThisCollection(refObject)) {
             RememberedSet.get().dirtyCardIfNecessary(dr, refObject);
             return true;
@@ -237,5 +258,16 @@ final class ReferenceObjectProcessing {
         HeapChunk.Header<?> chunk = HeapChunk.getEnclosingHeapChunk(obj);
         Space space = HeapChunk.getSpace(chunk);
         return !space.isFromSpace();
+    }
+
+    private static boolean willRequireOldGenFixup(Object obj) {
+        HeapChunk.Header<?> chunk;
+        if (ObjectHeaderImpl.isAlignedObject(obj)) {
+            chunk = AlignedHeapChunk.getEnclosingChunk(obj);
+        } else {
+            chunk = UnalignedHeapChunk.getEnclosingChunk(obj);
+        }
+        Space space = HeapChunk.getSpace(chunk);
+        return space.isOldSpace();
     }
 }

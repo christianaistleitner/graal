@@ -528,6 +528,10 @@ public final class GCImpl implements GC {
                 rootScanTimer.close();
             }
 
+            if (completeCollection) {
+                HeapImpl.getHeapImpl().getOldGeneration().compactAndReleaseSpaces(chunkReleaser);
+            }
+
             if (RuntimeCompilation.isEnabled()) {
                 Timer cleanCodeCacheTimer = timers.cleanCodeCache.open();
                 try {
@@ -1125,7 +1129,7 @@ public final class GCImpl implements GC {
 
         heap.getYoungGeneration().releaseSpaces(chunkReleaser);
         if (completeCollection) {
-            heap.getOldGeneration().compactAndReleaseSpaces(chunkReleaser);
+            //heap.getOldGeneration().compactAndReleaseSpaces(chunkReleaser);
         }
     }
 
