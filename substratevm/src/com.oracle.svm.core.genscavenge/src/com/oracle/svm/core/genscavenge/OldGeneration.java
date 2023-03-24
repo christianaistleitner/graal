@@ -388,6 +388,7 @@ public final class OldGeneration extends Generation {
 
     private class CompactingVisitor implements ObjectVisitor {
 
+        private Pointer relocationPointer;
         private Pointer relocationInfoPointer;
         private Pointer nextRelocationInfoPointer;
 
@@ -412,18 +413,19 @@ public final class OldGeneration extends Generation {
                 } {
                     nextRelocationInfoPointer = WordFactory.nullPointer();
                 }
-                Log.log().string("Jumped relocation info, current=").zhex(relocationInfoPointer)
+                relocationPointer = RelocationInfo.readRelocationPointer(relocationInfoPointer);
+                Log.noopLog().string("Jumped relocation info, current=").zhex(relocationInfoPointer)
                         .string(", next=").zhex(nextRelocationInfoPointer)
                         .newline().flush();
             }
 
-            Pointer newLocation = objPointer.subtract(relocationInfoPointer).add(RelocationInfo.readRelocationPointer(relocationInfoPointer));
+            Pointer newLocation = objPointer.subtract(relocationInfoPointer).add(relocationPointer);
 
-            Log.log().string("New relocation")
+            Log.noopLog().string("New relocation")
                     .string(", newLocation=").zhex(newLocation)
                     .string(", objPointer=").zhex(objPointer)
                     .string(", relocationInfoPointer=").zhex(relocationInfoPointer)
-                    .string(", relocationPointer=").zhex(RelocationInfo.readRelocationPointer(relocationInfoPointer))
+                    .string(", relocationPointer=").zhex(relocationPointer)
                     .newline().flush();
 
             UnsignedWord copySize = copyObject(obj, newLocation);
@@ -444,6 +446,7 @@ public final class OldGeneration extends Generation {
                 } {
                     nextRelocationInfoPointer = WordFactory.nullPointer();
                 }
+                relocationPointer = RelocationInfo.readRelocationPointer(relocationInfoPointer);
             }
         }
     }
