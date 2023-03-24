@@ -364,7 +364,7 @@ public final class OldGeneration extends Generation {
             Pointer relocationPointer = RelocationInfo.readRelocationPointer(relocationInfo);
             Pointer newLocation = relocationPointer.add(p.subtract(relocationInfo));
 
-            Object offsetObj = (innerOffset == 0) ? obj : newLocation.add(innerOffset).toObject();
+            Object offsetObj = (innerOffset == 0) ? newLocation.toObject() : newLocation.add(innerOffset).toObject();
             ReferenceAccess.singleton().writeObjectAt(objRef, offsetObj, compressed);
 
             if (p.and(15).isNull()) {
