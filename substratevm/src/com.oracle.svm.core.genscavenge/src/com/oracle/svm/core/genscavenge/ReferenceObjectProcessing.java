@@ -32,7 +32,7 @@ import java.lang.ref.ReferenceQueue;
 import java.lang.ref.SoftReference;
 
 import com.oracle.svm.core.log.Log;
-import org.graalvm.compiler.api.directives.GraalDirectives;
+import org.graalvm.compiler.word.ObjectAccess;
 import org.graalvm.compiler.word.Word;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
@@ -51,7 +51,7 @@ import com.oracle.svm.core.util.UnsignedUtils;
 /** Discovers and handles {@link Reference} objects during garbage collection. */
 final class ReferenceObjectProcessing {
     /** Head of the linked list of discovered references that need to be revisited. */
-    static Reference<?> rememberedRefsList;
+    static Reference<?> rememberedRefsList; // TODO: broken
 
     /**
      * For a {@link SoftReference}, the longest duration after its last access to keep its referent
@@ -118,17 +118,7 @@ final class ReferenceObjectProcessing {
             return;
         }
         Object refObject = referentAddr.toObject();
-        //if (willRequireOldGenFixup(refObject)) {
-        //    Reference<?> next = (rememberedRefsList != null) ? rememberedRefsList : dr;
-        //    ReferenceInternals.setNextDiscovered(dr, next);
-        //    rememberedRefsList = dr;
-//
-        //    Log.log().string("Added element to remembered references list, dr=").zhex(Word.objectToUntrackedPointer(obj))
-        //            .string(", ref=").zhex(referentAddr).newline().flush();
-//
-        //    return;
-        //}
-        if (willSurviveThisCollection(refObject) && !willRequireOldGenFixup(refObject)) {
+        if (willSurviveThisCollection(refObject)) {
             // Referent is in a to-space. So, this is either an object that got promoted without
             // being moved or an object in the old gen.
             RememberedSet.get().dirtyCardIfNecessary(dr, refObject);
@@ -144,20 +134,31 @@ final class ReferenceObjectProcessing {
             if (elapsed.belowThan(maxSoftRefAccessIntervalMs)) {
                 // Important: we need to pass the reference object as holder so that the remembered
                 // set can be updated accordingly!
+                Log.log().string("Does this look normal? dr=").zhex(Word.objectToUntrackedPointer(dr)).newline()
+                        .string("Does this look normal? getReferentFieldAddress=").zhex(ReferenceInternals.getReferentFieldAddress(dr)).newline()
+                        .string("Does this look normal? objAdr=").zhex(Word.objectToUntrackedPointer(ObjectAccess.readObject(WordFactory.nullPointer(), ReferenceInternals.getReferentFieldAddress(dr)))).newline()
+                        .string("Does this look normal? ref=").zhex(ReferenceInternals.getReferentPointer(dr)).newline()
+                        .string("Does this look normal? obj=").object(ObjectAccess.readObject(WordFactory.nullPointer(), ReferenceInternals.getReferentFieldAddress(dr))).newline()
+                        .flush();
                 refVisitor.visitObjectReference(ReferenceInternals.getReferentFieldAddress(dr), true, dr);
-                refObject = ReferenceInternals.getReferentPointer(dr).toObject(); // maybe promoted!
-                if (willRequireOldGenFixup(refObject)) {
-                    Log.log().string("Added element to remembered references list, dr=").zhex(Word.objectToUntrackedPointer(obj))
-                            .string(", ref=").object(refObject).newline().flush();
-                } else {
+                Log.log().string("Does this look normal? ref=").zhex(ReferenceInternals.getReferentPointer(dr)).newline().flush();
+                refObject = ReferenceInternals.getReferent(dr); // maybe promoted!
+                if (willSurviveThisCollection(refObject)) {
                     return; // referent will survive and referent field has been updated
                 }
             }
         }
 
+        if (Heap.getHeap().isInImageHeap(refObject)) {
+            Log.log().string("NOOOOOOO...").newline().flush();
+        }
+
         // When we reach this point, then we don't know if the referent will survive or not. So,
         // lets add the reference to the list of remembered references. All remembered references
         // are revisited after the GC finished promoting all strongly reachable objects.
+
+        Log.log().string("Added element to remembered refs list, referent=")
+                .zhex(ReferenceInternals.getReferentPointer(dr)).newline().flush();
 
         // null link means undiscovered, avoid for the last node with a cyclic reference
         Reference<?> next = (rememberedRefsList != null) ? rememberedRefsList : dr;
@@ -215,15 +216,17 @@ final class ReferenceObjectProcessing {
      */
     private static boolean processRememberedRef(Reference<?> dr) {
         Pointer refPointer = ReferenceInternals.getReferentPointer(dr);
+        Log.log().string("Processing element to remembered refs list, this=").object(ReferenceObjectProcessing.rememberedRefsList)
+                .string(", head=").zhex(Word.objectToUntrackedPointer(rememberedRefsList))
+                .string(", dr=").object(dr)
+                .string(", referent=").zhex(refPointer)
+                .newline().flush();
         assert refPointer.isNonNull() : "Referent is null: should not have been discovered";
         assert !HeapImpl.getHeapImpl().isInImageHeap(refPointer) : "Image heap referent: should not have been discovered";
         if (maybeUpdateForwardedReference(dr, refPointer)) {
             return true;
         }
         Object refObject = refPointer.toObject();
-        if (willRequireOldGenFixup(refObject)) {
-            Log.log().string("Would require fixup!").newline().flush();
-        }
         if (willSurviveThisCollection(refObject)) {
             RememberedSet.get().dirtyCardIfNecessary(dr, refObject);
             return true;
@@ -235,6 +238,7 @@ final class ReferenceObjectProcessing {
          * static analysis must see that the field can be null. This means that we get a write
          * barrier for this store.
          */
+        Log.log().string("referent died, ref=").object(dr).newline().flush();
         ReferenceInternals.setReferent(dr, null);
         return false;
     }
@@ -248,7 +252,28 @@ final class ReferenceObjectProcessing {
                 return false;
             }
             Object forwardedObj = ohi.getForwardedObject(referentAddr);
+            Log.log().string("Updated Reference A, referent=").object(forwardedObj).newline().flush();
             ReferenceInternals.setReferent(dr, forwardedObj);
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean maybeUpdateReference(Reference<?> dr, Pointer referentAddr) {
+        ObjectHeaderImpl ohi = ObjectHeaderImpl.getObjectHeaderImpl();
+        UnsignedWord header = ohi.readHeaderFromPointer(referentAddr);
+        Space space = HeapChunk.getSpace(HeapChunk.getEnclosingHeapChunk(referentAddr, header));
+        if (ObjectHeaderImpl.isForwardedHeader(header)) {
+            assert !space.isOldSpace();
+            Object forwardedObj = ohi.getForwardedObject(referentAddr);
+            Log.log().string("Updated Reference C, referent=").object(forwardedObj).newline().flush();
+            ReferenceInternals.setReferent(dr, forwardedObj);
+            return true;
+        }
+        if (ObjectHeaderImpl.hasMarkedBit(header) && space.isOldSpace()) {
+            Object relocatedObj = OldGeneration.getRelocatedObject(referentAddr);
+            Log.log().string("Updated Reference B, referent=").object(relocatedObj).newline().flush();
+            ReferenceInternals.setReferent(dr, relocatedObj);
             return true;
         }
         return false;
@@ -257,6 +282,9 @@ final class ReferenceObjectProcessing {
     private static boolean willSurviveThisCollection(Object obj) {
         HeapChunk.Header<?> chunk = HeapChunk.getEnclosingHeapChunk(obj);
         Space space = HeapChunk.getSpace(chunk);
+        if (space.isOldSpace()) {
+            return ObjectHeaderImpl.hasMarkedBit(obj) || !GCImpl.getGCImpl().isCompleteCollection();
+        }
         return !space.isFromSpace();
     }
 

@@ -29,6 +29,7 @@ import static com.oracle.svm.core.snippets.KnownIntrinsics.readReturnAddress;
 
 import java.lang.ref.Reference;
 
+import com.oracle.svm.core.heap.ObjectReferenceVisitor;
 import org.graalvm.compiler.api.replacements.Fold;
 import org.graalvm.nativeimage.CurrentIsolate;
 import org.graalvm.nativeimage.IsolateThread;
@@ -509,6 +510,9 @@ public final class GCImpl implements GC {
 
     /** Scavenge, either from dirty roots or from all roots, and process discovered references. */
     private void scavenge(boolean incremental) {
+
+        Log.log().string("[GCImpl.scavenge: Running collection, incremental=").bool(incremental).string("]\n").flush();
+
         GreyToBlackObjRefVisitor.Counters counters = greyToBlackObjRefVisitor.openCounters();
         long startTicks;
         try {
@@ -528,8 +532,25 @@ public final class GCImpl implements GC {
                 rootScanTimer.close();
             }
 
-            if (completeCollection) {
-                HeapImpl.getHeapImpl().getOldGeneration().compactAndReleaseSpaces(chunkReleaser);
+            if (!incremental) {
+                HeapImpl.getHeapImpl().getOldGeneration().sweep();
+            }
+
+            Timer referenceObjectsTimer = timers.referenceObjects.open();
+            try {
+                startTicks = JfrGCEvents.startGCPhasePause();
+                try {
+                    Reference<?> newlyPendingList = ReferenceObjectProcessing.processRememberedReferences();
+                    HeapImpl.getHeapImpl().addToReferencePendingList(newlyPendingList);
+                } finally {
+                    JfrGCEvents.emitGCPhasePauseEvent(getCollectionEpoch(), "Process Remembered References", startTicks);
+                }
+            } finally {
+                referenceObjectsTimer.close();
+            }
+
+            if (!incremental) {
+                HeapImpl.getHeapImpl().getOldGeneration().compact();
             }
 
             if (RuntimeCompilation.isEnabled()) {
@@ -549,19 +570,6 @@ public final class GCImpl implements GC {
                 } finally {
                     cleanCodeCacheTimer.close();
                 }
-            }
-
-            Timer referenceObjectsTimer = timers.referenceObjects.open();
-            try {
-                startTicks = JfrGCEvents.startGCPhasePause();
-                try {
-                    Reference<?> newlyPendingList = ReferenceObjectProcessing.processRememberedReferences();
-                    HeapImpl.getHeapImpl().addToReferencePendingList(newlyPendingList);
-                } finally {
-                    JfrGCEvents.emitGCPhasePauseEvent(getCollectionEpoch(), "Process Remembered References", startTicks);
-                }
-            } finally {
-                referenceObjectsTimer.close();
             }
 
             Timer releaseSpacesTimer = timers.releaseSpaces.open();
@@ -653,7 +661,7 @@ public final class GCImpl implements GC {
                  * Stack references are grey at the beginning of a collection, so I need to blacken
                  * them.
                  */
-                blackenStackRoots();
+                blackenStackRoots(greyToBlackObjRefVisitor);
 
                 /* Custom memory regions which contain object references. */
                 walkThreadLocals();
@@ -736,7 +744,7 @@ public final class GCImpl implements GC {
                  * Stack references are grey at the beginning of a collection, so I need to blacken
                  * them.
                  */
-                blackenStackRoots();
+                blackenStackRoots(greyToBlackObjRefVisitor);
 
                 /* Custom memory regions which contain object references. */
                 walkThreadLocals();
@@ -824,7 +832,7 @@ public final class GCImpl implements GC {
                     "Note that we could start the stack frame also further down the stack, because GC stack frames must not access any objects that are processed by the GC. " +
                     "But we don't store stack frame information for the first frame we would need to process.")
     @Uninterruptible(reason = "Required by called JavaStackWalker methods. We are at a safepoint during GC, so it does not change anything for this method.", calleeMustBe = false)
-    private void blackenStackRoots() {
+    void blackenStackRoots(ObjectReferenceVisitor visitor) {
         Timer blackenStackRootsTimer = timers.blackenStackRoots.open();
         try {
             Pointer sp = readCallerStackPointer();
@@ -832,7 +840,7 @@ public final class GCImpl implements GC {
 
             JavaStackWalk walk = StackValue.get(JavaStackWalk.class);
             JavaStackWalker.initWalk(walk, sp, ip);
-            walkStack(walk);
+            walkStack(walk, visitor);
 
             if (SubstrateOptions.MultiThreaded.getValue()) {
                 /*
@@ -850,7 +858,7 @@ public final class GCImpl implements GC {
                         continue;
                     }
                     if (JavaStackWalker.initWalk(walk, vmThread)) {
-                        walkStack(walk);
+                        walkStack(walk, visitor);
                     }
                 }
             }
@@ -866,7 +874,7 @@ public final class GCImpl implements GC {
      * calls to a stack frame visitor.
      */
     @Uninterruptible(reason = "Required by called JavaStackWalker methods. We are at a safepoint during GC, so it does not change anything for this method.", calleeMustBe = false)
-    private void walkStack(JavaStackWalk walk) {
+    private void walkStack(JavaStackWalk walk, ObjectReferenceVisitor visitor) {
         assert VMOperation.isGCInProgress() : "This methods accesses a CodeInfo without a tether";
 
         while (true) {
@@ -890,7 +898,7 @@ public final class GCImpl implements GC {
                 if (referenceMapIndex == ReferenceMapIndex.NO_REFERENCE_MAP) {
                     throw CodeInfoTable.reportNoReferenceMap(sp, ip, codeInfo);
                 }
-                CodeReferenceMapDecoder.walkOffsetsFromPointer(sp, referenceMapEncoding, referenceMapIndex, greyToBlackObjRefVisitor, null);
+                CodeReferenceMapDecoder.walkOffsetsFromPointer(sp, referenceMapEncoding, referenceMapIndex, visitor, null);
             } else {
                 /*
                  * This is a deoptimized frame. The DeoptimizedFrame object is stored in the frame,
@@ -906,8 +914,8 @@ public final class GCImpl implements GC {
                  * decide to invalidate too much code, depending on the order in which the CodeInfo
                  * objects are visited.
                  */
-                RuntimeCodeInfoAccess.walkStrongReferences(codeInfo, greyToBlackObjRefVisitor);
-                RuntimeCodeInfoAccess.walkWeakReferences(codeInfo, greyToBlackObjRefVisitor);
+                RuntimeCodeInfoAccess.walkStrongReferences(codeInfo, visitor);
+                RuntimeCodeInfoAccess.walkWeakReferences(codeInfo, visitor);
             }
 
             if (!JavaStackWalker.continueWalk(walk, queryResult, deoptFrame)) {
@@ -1129,7 +1137,7 @@ public final class GCImpl implements GC {
 
         heap.getYoungGeneration().releaseSpaces(chunkReleaser);
         if (completeCollection) {
-            //heap.getOldGeneration().compactAndReleaseSpaces(chunkReleaser);
+            heap.getOldGeneration().compactAndReleaseSpaces(chunkReleaser);
         }
     }
 
