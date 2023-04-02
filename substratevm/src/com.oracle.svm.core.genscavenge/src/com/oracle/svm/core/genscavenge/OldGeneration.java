@@ -452,7 +452,7 @@ public final class OldGeneration extends Generation {
             }
 
             Pointer nextRelocationInfo = RelocationInfo.getNextRelocationInfo(relocationInfo);
-            while (nextRelocationInfo.isNonNull() && nextRelocationInfo.belowThan(p)) {
+            while (nextRelocationInfo.isNonNull() && nextRelocationInfo.belowOrEqual(p)) {
                 relocationInfo = nextRelocationInfo;
                 nextRelocationInfo = RelocationInfo.getNextRelocationInfo(relocationInfo);
             }
