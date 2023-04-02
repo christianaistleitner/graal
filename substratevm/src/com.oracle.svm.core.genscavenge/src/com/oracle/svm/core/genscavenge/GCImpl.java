@@ -203,7 +203,7 @@ public final class GCImpl implements GC {
 
         GCCause cause = GCCause.fromId(data.getCauseId());
         printGCBefore(cause.getName());
-        boolean outOfMemory = collectImpl(cause, data.getRequestingNanoTime(), data.getForceFullGC());
+        boolean outOfMemory = collectImpl(cause, data.getRequestingNanoTime(), true);
         printGCAfter(cause.getName());
 
         finishCollection();
@@ -220,7 +220,7 @@ public final class GCImpl implements GC {
         try {
             long startTicks = JfrTicks.elapsedTicks();
             try {
-                outOfMemory = doCollectImpl(cause, requestingNanoTime, forceFullGC, false);
+                outOfMemory = doCollectImpl(cause, requestingNanoTime, forceFullGC, true);
                 if (outOfMemory) {
                     // Avoid running out of memory with a full GC that reclaims softly reachable
                     // objects
@@ -1103,6 +1103,7 @@ public final class GCImpl implements GC {
     }
 
     private void promotePinnedObject(PinnedObjectImpl pinned) {
+        Log.log().string("Promoted pinned object!!!!!!!!\n").flush();
         HeapImpl heap = HeapImpl.getHeapImpl();
         Object referent = pinned.getObject();
         if (referent != null && !heap.isInImageHeap(referent)) {

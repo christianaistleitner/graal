@@ -134,14 +134,15 @@ final class ReferenceObjectProcessing {
             if (elapsed.belowThan(maxSoftRefAccessIntervalMs)) {
                 // Important: we need to pass the reference object as holder so that the remembered
                 // set can be updated accordingly!
+                Word objAdr = Word.objectToUntrackedPointer(ObjectAccess.readObject(WordFactory.nullPointer(), ReferenceInternals.getReferentFieldAddress(dr)));
                 Log.log().string("Does this look normal? dr=").zhex(Word.objectToUntrackedPointer(dr)).newline()
                         .string("Does this look normal? getReferentFieldAddress=").zhex(ReferenceInternals.getReferentFieldAddress(dr)).newline()
-                        .string("Does this look normal? objAdr=").zhex(Word.objectToUntrackedPointer(ObjectAccess.readObject(WordFactory.nullPointer(), ReferenceInternals.getReferentFieldAddress(dr)))).newline()
+                        .string("Does this look normal? objAdr=").zhex(objAdr).newline()
+                        .string("Does this look normal? objAdrFirstWord=").zhex(objAdr.readWord(0)).newline()
                         .string("Does this look normal? ref=").zhex(ReferenceInternals.getReferentPointer(dr)).newline()
                         .string("Does this look normal? obj=").object(ObjectAccess.readObject(WordFactory.nullPointer(), ReferenceInternals.getReferentFieldAddress(dr))).newline()
                         .flush();
                 refVisitor.visitObjectReference(ReferenceInternals.getReferentFieldAddress(dr), true, dr);
-                Log.log().string("Does this look normal? ref=").zhex(ReferenceInternals.getReferentPointer(dr)).newline().flush();
                 refObject = ReferenceInternals.getReferent(dr); // maybe promoted!
                 if (willSurviveThisCollection(refObject)) {
                     return; // referent will survive and referent field has been updated
@@ -221,6 +222,9 @@ final class ReferenceObjectProcessing {
                 .string(", dr=").object(dr)
                 .string(", referent=").zhex(refPointer)
                 .newline().flush();
+        if (refPointer.isNull()) {
+            return false; // TODO
+        }
         assert refPointer.isNonNull() : "Referent is null: should not have been discovered";
         assert !HeapImpl.getHeapImpl().isInImageHeap(refPointer) : "Image heap referent: should not have been discovered";
         if (maybeUpdateForwardedReference(dr, refPointer)) {

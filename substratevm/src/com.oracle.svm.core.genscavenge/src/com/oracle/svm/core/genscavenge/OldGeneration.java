@@ -36,9 +36,11 @@ import com.oracle.svm.core.SubstrateOptions;
 import com.oracle.svm.core.UnmanagedMemoryUtil;
 import com.oracle.svm.core.code.RuntimeCodeInfoMemory;
 import com.oracle.svm.core.config.ConfigurationValues;
+import com.oracle.svm.core.heap.Heap;
 import com.oracle.svm.core.heap.ObjectReferenceVisitor;
 import com.oracle.svm.core.heap.ReferenceAccess;
 import com.oracle.svm.core.heap.ReferenceInternals;
+import com.oracle.svm.core.hub.DynamicHub;
 import com.oracle.svm.core.hub.InteriorObjRefWalker;
 import com.oracle.svm.core.identityhashcode.IdentityHashCodeSupport;
 import com.oracle.svm.core.snippets.KnownIntrinsics;
@@ -67,6 +69,8 @@ import com.oracle.svm.core.hub.LayoutEncoding;
 import com.oracle.svm.core.log.Log;
 import com.oracle.svm.core.thread.VMOperation;
 import com.oracle.svm.core.util.VMError;
+
+import java.lang.ref.Reference;
 
 /**
  * The old generation has only one {@link Space} for existing, newly-allocated or promoted objects
@@ -189,9 +193,9 @@ public final class OldGeneration extends Generation {
         HeapImpl.getHeapImpl().walkImageHeapObjects(fixingVisitor);
         ThreadLocalMTWalker.walk(refFixingVisitor);
         RuntimeCodeInfoMemory.singleton().walkRuntimeMethodsDuringGC(runtimeCodeCacheWalker);
-        refFixingVisitor.debug = true;
+        //refFixingVisitor.debug = true;
         GCImpl.getGCImpl().blackenStackRoots(refFixingVisitor);
-        refFixingVisitor.debug = false;
+        //refFixingVisitor.debug = false;
 
         if (ReferenceObjectProcessing.rememberedRefsList != null) {
             Log.log().string("rememberedRefsList, p=").zhex(Word.objectToUntrackedPointer(ReferenceObjectProcessing.rememberedRefsList))
@@ -211,6 +215,7 @@ public final class OldGeneration extends Generation {
             compactingVisitor.setChunk(aChunk);
             RelocationInfo.walkObjects(aChunk, compactingVisitor);
             RememberedSet.get().clearRememberedSet(aChunk);
+            RememberedSet.get().enableRememberedSetForChunk(aChunk); // update FirstObjectTable
             aChunk.setFirstRelocationInfo(null);
             Log.log().string("[OldGeneration.compactAndReleaseSpaces: compacting phase, chunk=").zhex(aChunk)
                     .string(", newTopOffset=").zhex(aChunk.getTopOffset())
@@ -410,7 +415,31 @@ public final class OldGeneration extends Generation {
 
         @Override
         public boolean visitObject(Object obj) {
-            // ReferenceObjectProcessing.discoverIfReference(obj, refFixingVisitor); // this didn't fix it
+
+            // fixes Target_java_lang_ref_Reference.referent
+            DynamicHub hub = KnownIntrinsics.readHub(obj);
+            if (probability(SLOW_PATH_PROBABILITY, hub.isReferenceInstanceClass())) {
+                Reference<?> dr = (Reference<?>) obj;
+
+                Pointer objRef = ReferenceInternals.getReferentFieldAddress(dr);
+
+                Pointer p = ReferenceAccess.singleton().readObjectAsUntrackedPointer(objRef, true);
+
+                if (p.isNonNull() && !Heap.getHeap().isInImageHeap(p)) {
+                    Log.log().string("A").newline().flush();
+                    if (ObjectHeaderImpl.hasMarkedBit(p.toObject())) {
+                        Log.log().string("B").newline().flush();
+                        refFixingVisitor.visitObjectReference(objRef, true, dr);
+                    } else {
+                        Log.log().string("C").newline().flush();
+                        ReferenceInternals.setReferent(dr, null); // dead
+                        Reference<?> next = (ReferenceObjectProcessing.rememberedRefsList != null) ? ReferenceObjectProcessing.rememberedRefsList : dr;
+                        ReferenceInternals.setNextDiscovered(dr, next);
+                        ReferenceObjectProcessing.rememberedRefsList = dr;
+                    }
+                }
+            }
+
             InteriorObjRefWalker.walkObjectInline(obj, refFixingVisitor);
             return true;
         }
@@ -446,6 +475,8 @@ public final class OldGeneration extends Generation {
                 return true;
             }
 
+            assert ObjectHeaderImpl.hasMarkedBit(obj) : "Referred object died!";
+
             Pointer relocationInfo = AlignedHeapChunk.getEnclosingChunkFromObjectPointer(p).getFirstRelocationInfo();
             if (relocationInfo.isNull() || relocationInfo.aboveThan(p)) {
                 return true;
@@ -458,12 +489,15 @@ public final class OldGeneration extends Generation {
             }
 
             Pointer relocationPointer = RelocationInfo.readRelocationPointer(relocationInfo);
-            Pointer newLocation = relocationPointer.add(p.subtract(relocationInfo));
+            Pointer newLocationOld = relocationPointer.add(p.subtract(relocationInfo));
+
+            Pointer newLocation = getRelocatedObjectPointer(p);
+            assert newLocation.equal(newLocationOld);
 
             Object offsetObj = (innerOffset == 0) ? newLocation.toObject() : newLocation.add(innerOffset).toObject();
             ReferenceAccess.singleton().writeObjectAt(objRef, offsetObj, compressed);
 
-            if (debug || holderObject == ReferenceObjectProcessing.rememberedRefsList) {
+            if (debug) {
                 Log.log().string("Updated location, old=").zhex(p)
                         .string(", new=").zhex(newLocation)
                         .string(", diff=").signed(newLocation.subtract(p))
@@ -476,7 +510,7 @@ public final class OldGeneration extends Generation {
                         .newline().flush();
             }
 
-            if (!ObjectHeaderImpl.hasMarkedBit(obj) || newLocation.add(innerOffset).subtract(KnownIntrinsics.heapBase()).belowThan(32)) {
+            if (!ObjectHeaderImpl.hasMarkedBit(obj)) {
                 Log.log().string("Updated location but object is not marked, old=").zhex(p)
                         .string(", new=").zhex(newLocation)
                         .string(", diff=").signed(newLocation.subtract(p))
@@ -543,12 +577,7 @@ public final class OldGeneration extends Generation {
 
             if (nextRelocationInfoPointer.isNonNull() && objPointer.aboveOrEqual(nextRelocationInfoPointer)) {
                 relocationInfoPointer = nextRelocationInfoPointer;
-                int offset = RelocationInfo.readNextPlugOffset(relocationInfoPointer);
-                if (offset > 0) {
-                    nextRelocationInfoPointer = relocationInfoPointer.add(offset);
-                } {
-                    nextRelocationInfoPointer = WordFactory.nullPointer();
-                }
+                nextRelocationInfoPointer = RelocationInfo.getNextRelocationInfo(relocationInfoPointer);
                 relocationPointer = RelocationInfo.readRelocationPointer(relocationInfoPointer);
                 Log.log().string("Jumped relocation info, current=").zhex(relocationInfoPointer)
                         .string(", next=").zhex(nextRelocationInfoPointer)
@@ -761,24 +790,29 @@ public final class OldGeneration extends Generation {
     }
 
     static Object getRelocatedObject(Pointer p) {
+        return getRelocatedObjectPointer(p).toObject();
+    }
+
+    static Pointer getRelocatedObjectPointer(Pointer p) {
+        assert ObjectHeaderImpl.isAlignedObject(p.toObject()) : "Unaligned objects are not supported!";
+
         AlignedHeapChunk.AlignedHeader aChunk = AlignedHeapChunk.getEnclosingChunkFromObjectPointer(p);
         Pointer relocationInfo = aChunk.getFirstRelocationInfo();
         if (relocationInfo.isNull() || p.belowThan(relocationInfo)) {
-            return p.toObject(); // not relocated
+            return p; // not relocated
         }
 
         Pointer nextRelocationInfo = RelocationInfo.getNextRelocationInfo(relocationInfo);
-        while (nextRelocationInfo.isNonNull() && p.aboveOrEqual(nextRelocationInfo)) {
+        while (nextRelocationInfo.isNonNull() && nextRelocationInfo.belowOrEqual(p)) {
             relocationInfo = nextRelocationInfo;
             nextRelocationInfo = RelocationInfo.getNextRelocationInfo(relocationInfo);
         }
 
+        assert relocationInfo.belowOrEqual(p);
+
         Pointer relocationPointer = RelocationInfo.readRelocationPointer(relocationInfo);
-        Pointer newLocation = p.subtract(relocationInfo).add(relocationPointer);
+        Pointer relocationOffset = p.subtract(relocationInfo);
 
-        Log.log().string("Found relocated object, p=").zhex(p)
-                .string(", newLocation=").zhex(newLocation).newline().flush();
-
-        return newLocation.toObject();
+        return relocationPointer.add(relocationOffset);
     }
 }
