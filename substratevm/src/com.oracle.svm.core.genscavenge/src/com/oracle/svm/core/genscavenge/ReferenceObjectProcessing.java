@@ -31,6 +31,7 @@ import java.lang.ref.Reference;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.SoftReference;
 
+import com.oracle.svm.core.heap.ReferenceAccess;
 import com.oracle.svm.core.log.Log;
 import org.graalvm.compiler.word.ObjectAccess;
 import org.graalvm.compiler.word.Word;
@@ -118,7 +119,7 @@ final class ReferenceObjectProcessing {
             return;
         }
         Object refObject = referentAddr.toObject();
-        if (willSurviveThisCollection(refObject)) {
+        if (isInToSpace(refObject)) {
             // Referent is in a to-space. So, this is either an object that got promoted without
             // being moved or an object in the old gen.
             RememberedSet.get().dirtyCardIfNecessary(dr, refObject);
@@ -134,17 +135,9 @@ final class ReferenceObjectProcessing {
             if (elapsed.belowThan(maxSoftRefAccessIntervalMs)) {
                 // Important: we need to pass the reference object as holder so that the remembered
                 // set can be updated accordingly!
-                Word objAdr = Word.objectToUntrackedPointer(ObjectAccess.readObject(WordFactory.nullPointer(), ReferenceInternals.getReferentFieldAddress(dr)));
-                Log.log().string("Does this look normal? dr=").zhex(Word.objectToUntrackedPointer(dr)).newline()
-                        .string("Does this look normal? getReferentFieldAddress=").zhex(ReferenceInternals.getReferentFieldAddress(dr)).newline()
-                        .string("Does this look normal? objAdr=").zhex(objAdr).newline()
-                        .string("Does this look normal? objAdrFirstWord=").zhex(objAdr.readWord(0)).newline()
-                        .string("Does this look normal? ref=").zhex(ReferenceInternals.getReferentPointer(dr)).newline()
-                        .string("Does this look normal? obj=").object(ObjectAccess.readObject(WordFactory.nullPointer(), ReferenceInternals.getReferentFieldAddress(dr))).newline()
-                        .flush();
                 refVisitor.visitObjectReference(ReferenceInternals.getReferentFieldAddress(dr), true, dr);
                 refObject = ReferenceInternals.getReferent(dr); // maybe promoted!
-                if (willSurviveThisCollection(refObject)) {
+                if (isInToSpace(refObject)) {
                     return; // referent will survive and referent field has been updated
                 }
             }
@@ -217,21 +210,22 @@ final class ReferenceObjectProcessing {
      */
     private static boolean processRememberedRef(Reference<?> dr) {
         Pointer refPointer = ReferenceInternals.getReferentPointer(dr);
-        Log.log().string("Processing element to remembered refs list, this=").object(ReferenceObjectProcessing.rememberedRefsList)
-                .string(", head=").zhex(Word.objectToUntrackedPointer(rememberedRefsList))
-                .string(", dr=").object(dr)
-                .string(", referent=").zhex(refPointer)
-                .newline().flush();
-        if (refPointer.isNull()) {
-            return false; // TODO
-        }
         assert refPointer.isNonNull() : "Referent is null: should not have been discovered";
         assert !HeapImpl.getHeapImpl().isInImageHeap(refPointer) : "Image heap referent: should not have been discovered";
+        Object refObject = refPointer.toObject();
+        if (isInOldSpace(refObject) && ObjectHeaderImpl.hasMarkedBit(refObject)) {
+            Object relocatedObject = OldGeneration.getRelocatedObject(refPointer);
+            ReferenceInternals.setReferent(dr, relocatedObject);
+            Log.log().string("Updated Reference (relocated), dr=").object(dr)
+                    .string(", oldReferent=").object(refObject)
+                    .string(", newReferent=").zhex(Word.objectToUntrackedPointer(relocatedObject))
+                    .newline().flush();
+            return true;
+        }
         if (maybeUpdateForwardedReference(dr, refPointer)) {
             return true;
         }
-        Object refObject = refPointer.toObject();
-        if (willSurviveThisCollection(refObject)) {
+        if (isInToSpace(refObject)) {
             RememberedSet.get().dirtyCardIfNecessary(dr, refObject);
             return true;
         }
@@ -283,13 +277,21 @@ final class ReferenceObjectProcessing {
         return false;
     }
 
-    private static boolean willSurviveThisCollection(Object obj) {
+    private static boolean isInToSpace(Object obj) {
         HeapChunk.Header<?> chunk = HeapChunk.getEnclosingHeapChunk(obj);
         Space space = HeapChunk.getSpace(chunk);
-        if (space.isOldSpace()) {
-            return ObjectHeaderImpl.hasMarkedBit(obj) || !GCImpl.getGCImpl().isCompleteCollection();
-        }
         return !space.isFromSpace();
+    }
+
+    static boolean isInOldSpace(Object obj) {
+        if (obj != null) {
+            HeapChunk.Header<?> chunk = HeapChunk.getEnclosingHeapChunk(obj);
+            Space space = HeapChunk.getSpace(chunk);
+            if (space != null) {
+                return space.isOldSpace();
+            }
+        }
+        return false;
     }
 
     private static boolean willRequireOldGenFixup(Object obj) {

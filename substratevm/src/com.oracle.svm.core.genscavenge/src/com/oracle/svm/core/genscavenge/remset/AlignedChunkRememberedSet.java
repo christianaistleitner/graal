@@ -103,19 +103,10 @@ final class AlignedChunkRememberedSet {
         CardTable.cleanTable(getCardTableStart(chunk), getCardTableSize());
         FirstObjectTable.initializeTable(getFirstObjectTableStart(chunk), getFirstObjectTableSize());
 
-        Log.log().string("enableRememberedSet, chunk=").zhex(chunk).newline().flush();
         Pointer offset = AlignedHeapChunk.getObjectsStart(chunk);
         Pointer top = HeapChunk.getTopPointer(chunk);
         while (offset.belowThan(top)) {
             Object obj = offset.toObject();
-            Word clazzPtr = Word.objectToUntrackedPointer(obj.getClass());
-            if (clazzPtr.subtract(KnownIntrinsics.heapBase()).lessOrEqual(128)) {
-                Log.log().string("enableRememberedSet, top=").zhex(top)
-                        .string(", offset=").zhex(offset)
-                        .string(", clazzPtr=").zhex(clazzPtr)
-                        .string(", obj=").object(offset.toObject())
-                        .newline().flush();
-            }
             enableRememberedSetForObject(chunk, obj);
             offset = offset.add(LayoutEncoding.getSizeFromObjectInGC(obj));
         }

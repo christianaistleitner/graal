@@ -203,7 +203,7 @@ public final class GCImpl implements GC {
 
         GCCause cause = GCCause.fromId(data.getCauseId());
         printGCBefore(cause.getName());
-        boolean outOfMemory = collectImpl(cause, data.getRequestingNanoTime(), true);
+        boolean outOfMemory = collectImpl(cause, data.getRequestingNanoTime(), data.getForceFullGC());
         printGCAfter(cause.getName());
 
         finishCollection();
@@ -220,7 +220,7 @@ public final class GCImpl implements GC {
         try {
             long startTicks = JfrTicks.elapsedTicks();
             try {
-                outOfMemory = doCollectImpl(cause, requestingNanoTime, forceFullGC, true);
+                outOfMemory = doCollectImpl(cause, requestingNanoTime, forceFullGC, false);
                 if (outOfMemory) {
                     // Avoid running out of memory with a full GC that reclaims softly reachable
                     // objects

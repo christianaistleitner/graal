@@ -36,6 +36,7 @@ import com.oracle.svm.core.SubstrateOptions;
 import com.oracle.svm.core.UnmanagedMemoryUtil;
 import com.oracle.svm.core.code.RuntimeCodeInfoMemory;
 import com.oracle.svm.core.config.ConfigurationValues;
+import com.oracle.svm.core.graal.RuntimeCompilation;
 import com.oracle.svm.core.heap.Heap;
 import com.oracle.svm.core.heap.ObjectReferenceVisitor;
 import com.oracle.svm.core.heap.ReferenceAccess;
@@ -155,53 +156,43 @@ public final class OldGeneration extends Generation {
         Log.log().string("[OldGeneration.compactAndReleaseSpaces: planning phase]").newline().flush();
         AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
         while (aChunk.isNonNull()) {
+            Log.log().string("[OldGeneration.sweep: planning phase, chunk=").zhex(aChunk).string("]").newline().flush();
             planningVisitor.init(aChunk);
             RelocationInfo.walkObjects(aChunk, planningVisitor);
+            planningVisitor.finish();
             aChunk = HeapChunk.getNext(aChunk);
         }
-
-        if (ReferenceObjectProcessing.rememberedRefsList != null) {
-            Log.log().string("rememberedRefsList, p=").zhex(Word.objectToUntrackedPointer(ReferenceObjectProcessing.rememberedRefsList))
-                    .string(", dr=").object(ReferenceObjectProcessing.rememberedRefsList)
-                    .string(", referent=").zhex(ReferenceInternals.getReferentPointer(ReferenceObjectProcessing.rememberedRefsList))
-                    .newline().flush();
-        } else {
-            Log.log().string("rememberedRefsList, dr=null\n").flush();
-        }
-
     }
 
     @NeverInline("")
     void compact() {
-        if (ReferenceObjectProcessing.rememberedRefsList != null) {
-            Log.log().string("rememberedRefsList, p=").zhex(Word.objectToUntrackedPointer(ReferenceObjectProcessing.rememberedRefsList))
-                    .string(", dr=").object(ReferenceObjectProcessing.rememberedRefsList)
-                    .string(", referent=").zhex(ReferenceInternals.getReferentPointer(ReferenceObjectProcessing.rememberedRefsList))
-                    .newline().flush();
-        } else {
-            Log.log().string("rememberedRefsList, dr=null\n").flush();
-        }
-
         // Phase 2: Fix object references
         Log.log().string("[OldGeneration.compactAndReleaseSpaces: fixing phase]").newline().flush();
         AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
         while (aChunk.isNonNull()) {
+            Log.log().string("[OldGeneration.compact: fixing phase, chunk=").zhex(aChunk)
+                    .string(", top=").zhex(HeapChunk.getTopPointer(aChunk))
+                    .string("]").newline().flush();
             fixingVisitor.setChunk(aChunk);
             RelocationInfo.walkObjects(aChunk, fixingVisitor);
             aChunk = HeapChunk.getNext(aChunk);
         }
         HeapImpl.getHeapImpl().walkImageHeapObjects(fixingVisitor);
         ThreadLocalMTWalker.walk(refFixingVisitor);
-        RuntimeCodeInfoMemory.singleton().walkRuntimeMethodsDuringGC(runtimeCodeCacheWalker);
-        //refFixingVisitor.debug = true;
+        refFixingVisitor.debug = true;
+        if (RuntimeCompilation.isEnabled()) {
+            RuntimeCodeInfoMemory.singleton().walkRuntimeMethodsDuringGC(runtimeCodeCacheWalker);
+        }
+        refFixingVisitor.debug = false;
         GCImpl.getGCImpl().blackenStackRoots(refFixingVisitor);
-        //refFixingVisitor.debug = false;
-
-        if (ReferenceObjectProcessing.rememberedRefsList != null) {
-            Log.log().string("rememberedRefsList, p=").zhex(Word.objectToUntrackedPointer(ReferenceObjectProcessing.rememberedRefsList))
-                    .newline().flush();
-        } else {
-            Log.log().string("rememberedRefsList, dr=null\n").flush();
+        UnalignedHeapChunk.UnalignedHeader uChunk = space.getFirstUnalignedHeapChunk();
+        while (uChunk.isNonNull()) {
+            Log.log().string("[OldGeneration.compact: fixing phase, chunk=").zhex(uChunk)
+                    .string(", unaligned]").newline().flush();
+            Pointer objPointer = UnalignedHeapChunk.getObjectStart(uChunk);
+            Object obj = objPointer.toObject();
+            fixingVisitor.visitObject(obj);
+            uChunk = HeapChunk.getNext(uChunk);
         }
 
         // Phase 3: Copy objects to their new location
@@ -209,7 +200,7 @@ public final class OldGeneration extends Generation {
         aChunk = space.getFirstAlignedHeapChunk();
         while (aChunk.isNonNull()) {
             Log.log().string("[OldGeneration.compactAndReleaseSpaces: compacting phase, chunk=").zhex(aChunk)
-                    .string(", oldTopOffset=").zhex(aChunk.getTopOffset())
+                    .string(", oldTop=").zhex(HeapChunk.getTopPointer(aChunk))
                     .string(", firstRelocInfo=").zhex(aChunk.getFirstRelocationInfo())
                     .string("]").newline().flush();
             compactingVisitor.setChunk(aChunk);
@@ -218,18 +209,9 @@ public final class OldGeneration extends Generation {
             RememberedSet.get().enableRememberedSetForChunk(aChunk); // update FirstObjectTable
             aChunk.setFirstRelocationInfo(null);
             Log.log().string("[OldGeneration.compactAndReleaseSpaces: compacting phase, chunk=").zhex(aChunk)
-                    .string(", newTopOffset=").zhex(aChunk.getTopOffset())
+                    .string(", newTop=").zhex(HeapChunk.getTopPointer(aChunk))
                     .string("]").newline().flush();
             aChunk = HeapChunk.getNext(aChunk);
-        }
-
-        if (ReferenceObjectProcessing.rememberedRefsList != null) {
-            Log.log().string("rememberedRefsList, p=").zhex(Word.objectToUntrackedPointer(ReferenceObjectProcessing.rememberedRefsList))
-                    .string(", dr=").object(ReferenceObjectProcessing.rememberedRefsList)
-                    .string(", referent=").zhex(ReferenceInternals.getReferentPointer(ReferenceObjectProcessing.rememberedRefsList))
-                    .newline().flush();
-        } else {
-            Log.log().string("rememberedRefsList, dr=null\n").flush();
         }
     }
 
@@ -250,13 +232,6 @@ public final class OldGeneration extends Generation {
                 chunkReleaser.add(uChunk);
             }
             uChunk = HeapChunk.getNext(uChunk);
-        }
-
-        if (ReferenceObjectProcessing.rememberedRefsList != null) {
-            Log.log().string("rememberedRefsList, p=").zhex(Word.objectToUntrackedPointer(ReferenceObjectProcessing.rememberedRefsList))
-                    .newline().flush();
-        } else {
-            Log.log().string("rememberedRefsList, dr=null\n").flush();
         }
 
         //// Phase 3: Copy objects to their new location
@@ -407,6 +382,40 @@ public final class OldGeneration extends Generation {
             this.relocationPointer = AlignedHeapChunk.getObjectsStart(chunk);
             this.gapSize =  WordFactory.zero();
         }
+
+        public void finish() {
+            if (gapSize.notEqual(0)) {
+                Pointer topPointer = HeapChunk.getTopPointer(chunk);
+                Log.log().string("Gap at chunk end from ").zhex(topPointer.subtract(gapSize))
+                        .string(" to ").zhex(topPointer)
+                        .string(" (").unsigned(gapSize).string(" bytes)")
+                        .newline().flush();
+
+                if (relocationInfoPointer.isNull()) {
+                    if (chunk.isNull()){
+                        Log.log().string("Nooooo! chunk=").zhex(chunk).newline().flush();
+                    }
+                    chunk.setFirstRelocationInfo(topPointer);
+                } else {
+                    int offset = (int) topPointer.subtract(relocationInfoPointer).rawValue();
+                    RelocationInfo.writeNextPlugOffset(relocationInfoPointer, offset);
+
+                    Log.log().string("Updated relocation info at ").zhex(relocationInfoPointer)
+                            .string(": nextPlugOffset=").zhex(offset)
+                            .newline().flush();
+                }
+                relocationInfoPointer = topPointer;
+                RelocationInfo.writeRelocationPointer(relocationInfoPointer, relocationPointer);
+                RelocationInfo.writeGapSize(relocationInfoPointer, (int) gapSize.rawValue());
+                RelocationInfo.writeNextPlugOffset(relocationInfoPointer, 0);
+
+                Log.log().string("Wrote relocation info at ").zhex(relocationInfoPointer)
+                        .string(": relocationPointer=").zhex(relocationPointer)
+                        .string(": gapSize=").unsigned(gapSize)
+                        .string(": nextPlugOffset=").zhex(0)
+                        .newline().flush();
+            }
+        }
     }
 
     private class FixingVisitor implements ObjectVisitor {
@@ -417,6 +426,7 @@ public final class OldGeneration extends Generation {
         public boolean visitObject(Object obj) {
 
             // fixes Target_java_lang_ref_Reference.referent
+            /*
             DynamicHub hub = KnownIntrinsics.readHub(obj);
             if (probability(SLOW_PATH_PROBABILITY, hub.isReferenceInstanceClass())) {
                 Reference<?> dr = (Reference<?>) obj;
@@ -439,6 +449,7 @@ public final class OldGeneration extends Generation {
                     }
                 }
             }
+            */
 
             InteriorObjRefWalker.walkObjectInline(obj, refFixingVisitor);
             return true;
@@ -472,13 +483,31 @@ public final class OldGeneration extends Generation {
 
             Object obj = p.toObject();
             if (ObjectHeaderImpl.isUnalignedObject(obj)) {
+                if (HeapImpl.getHeapImpl().isInImageHeap(holderObject)){
+                    RememberedSet.get().dirtyCardIfNecessary(holderObject, obj);
+                }
                 return true;
             }
 
-            assert ObjectHeaderImpl.hasMarkedBit(obj) : "Referred object died!";
+            if (ReferenceObjectProcessing.isInOldSpace(holderObject) && !ObjectHeaderImpl.hasMarkedBit(holderObject)) {
+                Log.log().string("[ERROR: Fixing dead holder object died, obj=").object(obj)
+                        .string(", holderObject=").object(holderObject)
+                        .string("]\n").flush();
+                assert false : "Referred object died!";
+            }
+
+            if (!ObjectHeaderImpl.hasMarkedBit(obj)) {
+                Log.log().string("[ERROR: Referred object died, obj=").object(obj)
+                        .string(", holderObject=").object(holderObject)
+                        .string("]\n").flush();
+                assert false : "Referred object died!";
+            }
 
             Pointer relocationInfo = AlignedHeapChunk.getEnclosingChunkFromObjectPointer(p).getFirstRelocationInfo();
             if (relocationInfo.isNull() || relocationInfo.aboveThan(p)) {
+                if (HeapImpl.getHeapImpl().isInImageHeap(holderObject)){
+                    RememberedSet.get().dirtyCardIfNecessary(holderObject, obj);
+                }
                 return true;
             }
 
@@ -496,6 +525,13 @@ public final class OldGeneration extends Generation {
 
             Object offsetObj = (innerOffset == 0) ? newLocation.toObject() : newLocation.add(innerOffset).toObject();
             ReferenceAccess.singleton().writeObjectAt(objRef, offsetObj, compressed);
+
+            // if (ObjectHeaderImpl.hasRememberedSet(ObjectHeaderImpl.readHeaderFromObject(holderObject))) {
+            //     RememberedSet.get().dirtyCardIfNecessary(holderObject, newLocation.toObject());
+            // }
+            if (HeapImpl.getHeapImpl().isInImageHeap(holderObject)){
+                RememberedSet.get().dirtyCardIfNecessary(holderObject, newLocation.toObject());
+            }
 
             if (debug) {
                 Log.log().string("Updated location, old=").zhex(p)
