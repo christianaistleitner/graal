@@ -237,6 +237,16 @@ public final class OldGeneration extends Generation {
             uChunk = HeapChunk.getNext(uChunk);
         }
 
+        AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
+        while (aChunk.isNonNull()) {
+            if (HeapChunk.getTopPointer(aChunk).equal(AlignedHeapChunk.getObjectsStart(aChunk))) {
+                // Release the empty aligned chunk
+                space.extractAlignedHeapChunk(aChunk);
+                chunkReleaser.add(aChunk);
+            }
+            aChunk = HeapChunk.getNext(aChunk);
+        }
+
         //// Phase 3: Copy objects to their new location
         //Log.log().string("[OldGeneration.compactAndReleaseSpaces: compacting phase]").newline().flush();
         //AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
@@ -397,34 +407,14 @@ public final class OldGeneration extends Generation {
         public void finish() {
             if (gapSize.notEqual(0)) {
                 Pointer topPointer = HeapChunk.getTopPointer(chunk);
-                Log.log().string("Gap at chunk end from ").zhex(topPointer.subtract(gapSize))
+                Pointer gapStart = topPointer.subtract(gapSize);
+
+                Log.log().string("Gap at chunk end from ").zhex(gapStart)
                         .string(" to ").zhex(topPointer)
                         .string(" (").unsigned(gapSize).string(" bytes)")
                         .newline().flush();
 
-                if (relocationInfoPointer.isNull()) {
-                    if (chunk.isNull()){
-                        Log.log().string("Nooooo! chunk=").zhex(chunk).newline().flush();
-                    }
-                    chunk.setFirstRelocationInfo(topPointer);
-                } else {
-                    int offset = (int) topPointer.subtract(relocationInfoPointer).rawValue();
-                    RelocationInfo.writeNextPlugOffset(relocationInfoPointer, offset);
-
-                    Log.log().string("Updated relocation info at ").zhex(relocationInfoPointer)
-                            .string(": nextPlugOffset=").zhex(offset)
-                            .newline().flush();
-                }
-                relocationInfoPointer = topPointer;
-                RelocationInfo.writeRelocationPointer(relocationInfoPointer, relocationPointer);
-                RelocationInfo.writeGapSize(relocationInfoPointer, (int) gapSize.rawValue());
-                RelocationInfo.writeNextPlugOffset(relocationInfoPointer, 0);
-
-                Log.log().string("Wrote relocation info at ").zhex(relocationInfoPointer)
-                        .string(": relocationPointer=").zhex(relocationPointer)
-                        .string(": gapSize=").unsigned(gapSize)
-                        .string(": nextPlugOffset=").zhex(0)
-                        .newline().flush();
+                HeapChunk.setTopPointer(chunk, gapStart);
             }
         }
     }
@@ -626,9 +616,6 @@ public final class OldGeneration extends Generation {
                 relocationInfoPointer = nextRelocationInfoPointer;
                 nextRelocationInfoPointer = RelocationInfo.getNextRelocationInfo(relocationInfoPointer);
                 relocationPointer = RelocationInfo.readRelocationPointer(relocationInfoPointer);
-                Log.log().string("Jumped relocation info, current=").zhex(relocationInfoPointer)
-                        .string(", next=").zhex(nextRelocationInfoPointer)
-                        .newline().flush();
             }
 
             Pointer newLocation = objPointer.subtract(relocationInfoPointer).add(relocationPointer);
