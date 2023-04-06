@@ -168,7 +168,7 @@ public final class ObjectHeaderImpl extends ObjectHeader {
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
-    void setIdentityHashInField(Object o) {
+    public void setIdentityHashInField(Object o) {
         assert VMOperation.isGCInProgress();
         VMError.guarantee(!hasFixedIdentityHashField());
         UnsignedWord oldHeader = readHeaderFromObject(o);
@@ -217,7 +217,7 @@ public final class ObjectHeaderImpl extends ObjectHeader {
 
     @AlwaysInline("GC performance")
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
-    static boolean hasIdentityHashFromAddressInline(Word header) {
+    public static boolean hasIdentityHashFromAddressInline(Word header) {
         if (hasFixedIdentityHashField()) {
             return false;
         }

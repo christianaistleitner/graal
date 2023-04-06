@@ -31,6 +31,7 @@ import java.lang.ref.Reference;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.SoftReference;
 
+import com.oracle.svm.core.genscavenge.tenured.RelocationInfo;
 import com.oracle.svm.core.heap.ReferenceAccess;
 import com.oracle.svm.core.log.Log;
 import org.graalvm.compiler.word.ObjectAccess;
@@ -219,7 +220,7 @@ final class ReferenceObjectProcessing {
         assert !HeapImpl.getHeapImpl().isInImageHeap(refPointer) : "Image heap referent: should not have been discovered";
         Object refObject = refPointer.toObject();
         if (isInOldSpace(refObject) && ObjectHeaderImpl.hasMarkedBit(refObject)) {
-            Object relocatedObject = OldGeneration.getRelocatedObject(refPointer);
+            Object relocatedObject = RelocationInfo.getRelocatedObject(refPointer);
             ReferenceInternals.setReferent(dr, relocatedObject);
             Log.log().string("Updated Reference (relocated), dr=").object(dr)
                     .string(", oldReferent=").object(refObject)
@@ -276,7 +277,7 @@ final class ReferenceObjectProcessing {
             return true;
         }
         if (ObjectHeaderImpl.hasMarkedBit(header) && space.isOldSpace()) {
-            Object relocatedObj = OldGeneration.getRelocatedObject(referentAddr);
+            Object relocatedObj = RelocationInfo.getRelocatedObject(referentAddr);
             Log.log().string("Updated Reference B, referent=").object(relocatedObj).newline().flush();
             ReferenceInternals.setReferent(dr, relocatedObj);
             return true;
