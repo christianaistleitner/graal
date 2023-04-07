@@ -200,53 +200,35 @@ public final class OldGeneration extends Generation {
         }
     }
 
-    void compactAndReleaseSpaces(ChunkReleaser chunkReleaser) {
+    void releaseSpaces(ChunkReleaser chunkReleaser) {
 
-        // Phase 0: Release unmarked unaligned chunks
+        // Release unmarked unaligned chunks.
         UnalignedHeapChunk.UnalignedHeader uChunk = space.getFirstUnalignedHeapChunk();
         while (uChunk.isNonNull()) {
             Pointer objPointer = UnalignedHeapChunk.getObjectStart(uChunk);
             Object obj = objPointer.toObject();
             if (ObjectHeaderImpl.hasMarkedBit(obj)) {
-                // Clear and keep chunk
+                // Clear and keep chunk.
                 ObjectHeaderImpl.clearMarkedBit(obj);
                 RememberedSet.get().clearRememberedSet(uChunk);
             } else {
-                // Release the enclosing unaligned chunk
+                // Release the enclosing unaligned chunk.
                 space.extractUnalignedHeapChunk(uChunk);
                 chunkReleaser.add(uChunk);
             }
             uChunk = HeapChunk.getNext(uChunk);
         }
 
+        // Release empty aligned chunks.
         AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
         while (aChunk.isNonNull()) {
             if (HeapChunk.getTopPointer(aChunk).equal(AlignedHeapChunk.getObjectsStart(aChunk))) {
-                // Release the empty aligned chunk
+                // Release the empty aligned chunk.
                 space.extractAlignedHeapChunk(aChunk);
                 chunkReleaser.add(aChunk);
             }
             aChunk = HeapChunk.getNext(aChunk);
         }
-
-        //// Phase 3: Copy objects to their new location
-        //Log.log().string("[OldGeneration.compactAndReleaseSpaces: compacting phase]").newline().flush();
-        //AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
-        //while (aChunk.isNonNull()) {
-        //    Log.log().string("[OldGeneration.compactAndReleaseSpaces: compacting phase, chunk=").zhex(aChunk)
-        //            .string(", oldTopOffset=").zhex(aChunk.getTopOffset())
-        //            .string(", firstRelocInfo=").zhex(aChunk.getFirstRelocationInfo())
-        //            .string("]").newline().flush();
-        //    compactingVisitor.setChunk(aChunk);
-        //    RelocationInfo.walkObjects(aChunk, compactingVisitor);
-        //    RememberedSet.get().clearRememberedSet(aChunk);
-        //    aChunk.setFirstRelocationInfo(null);
-        //    Log.log().string("[OldGeneration.compactAndReleaseSpaces: compacting phase, chunk=").zhex(aChunk)
-        //            .string(", newTopOffset=").zhex(aChunk.getTopOffset())
-        //            .string("]").newline().flush();
-        //    aChunk = HeapChunk.getNext(aChunk);
-        //}
-
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)

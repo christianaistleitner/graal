@@ -26,8 +26,6 @@ package com.oracle.svm.core.genscavenge.remset;
 
 import java.util.List;
 
-import com.oracle.svm.core.log.Log;
-import com.oracle.svm.core.snippets.KnownIntrinsics;
 import jdk.compiler.graal.api.replacements.Fold;
 import jdk.compiler.graal.replacements.nodes.AssertionNode;
 import jdk.compiler.graal.word.Word;
