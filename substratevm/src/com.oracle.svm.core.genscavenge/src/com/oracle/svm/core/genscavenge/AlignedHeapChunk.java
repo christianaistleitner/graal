@@ -181,15 +181,4 @@ public final class AlignedHeapChunk {
             return getObjectsStart(heapChunk);
         }
     }
-
-    static final class FreeList {
-
-        private FreeList(){
-            // all static
-        }
-
-        void writeAt(Pointer p, UnsignedWord size) {
-
-        }
-    }
 }
