@@ -429,6 +429,7 @@ public final class GCImpl implements GC {
     }
 
     private static void precondition() {
+        // There are currently no preconditions in place.
     }
 
     private static void postcondition() {
@@ -461,9 +462,6 @@ public final class GCImpl implements GC {
 
     /** Scavenge, either from dirty roots or from all roots, and process discovered references. */
     private void scavenge(boolean incremental) {
-
-        Log.log().string("[GCImpl.scavenge: Running collection, incremental=").bool(incremental).string("]\n").flush();
-
         GreyToBlackObjRefVisitor.Counters counters = greyToBlackObjRefVisitor.openCounters();
         long startTicks;
         try {
@@ -1114,7 +1112,7 @@ public final class GCImpl implements GC {
 
         heap.getYoungGeneration().releaseSpaces(chunkReleaser);
         if (completeCollection) {
-            heap.getOldGeneration().compactAndReleaseSpaces(chunkReleaser);
+            heap.getOldGeneration().releaseSpaces(chunkReleaser);
         }
     }
 
