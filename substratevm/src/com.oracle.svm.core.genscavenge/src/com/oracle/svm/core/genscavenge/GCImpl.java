@@ -511,8 +511,6 @@ public final class GCImpl implements GC {
 
     /** Scavenge, either from dirty roots or from all roots, and process discovered references. */
     private void scavenge(boolean incremental) {
-        Log.log().string("[GCImpl.scavenge: Running collection, incremental=").bool(incremental).string("]\n").flush();
-
         GreyToBlackObjRefVisitor.Counters counters = greyToBlackObjRefVisitor.openCounters();
         long startTicks;
         try {
