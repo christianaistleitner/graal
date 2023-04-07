@@ -484,7 +484,17 @@ public final class GCImpl implements GC {
             }
 
             if (!incremental) {
-                HeapImpl.getHeapImpl().getOldGeneration().sweep();
+                Timer tenuredPlanningTimer = timers.tenuredPlanning.open();
+                try {
+                    startTicks = JfrGCEvents.startGCPhasePause();
+                    try {
+                        HeapImpl.getHeapImpl().getOldGeneration().sweep();
+                    } finally {
+                        JfrGCEvents.emitGCPhasePauseEvent(getCollectionEpoch(), "Tenured Planning", startTicks);
+                    }
+                } finally {
+                    tenuredPlanningTimer.close();
+                }
             }
 
             Timer referenceObjectsTimer = timers.referenceObjects.open();
@@ -501,7 +511,17 @@ public final class GCImpl implements GC {
             }
 
             if (!incremental) {
-                HeapImpl.getHeapImpl().getOldGeneration().compact();
+                Timer tenuredCompactingTimer = timers.tenuredCompacting.open();
+                try {
+                    startTicks = JfrGCEvents.startGCPhasePause();
+                    try {
+                        HeapImpl.getHeapImpl().getOldGeneration().compact();
+                    } finally {
+                        JfrGCEvents.emitGCPhasePauseEvent(getCollectionEpoch(), "Tenured Compacting", startTicks);
+                    }
+                } finally {
+                    tenuredCompactingTimer.close();
+                }
             }
 
             if (RuntimeCompilation.isEnabled()) {
