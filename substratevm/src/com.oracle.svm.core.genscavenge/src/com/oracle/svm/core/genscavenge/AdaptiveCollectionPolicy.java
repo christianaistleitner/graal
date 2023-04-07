@@ -26,8 +26,6 @@ package com.oracle.svm.core.genscavenge;
 
 import static com.oracle.svm.core.genscavenge.CollectionPolicy.shouldCollectYoungGenSeparately;
 
-import com.oracle.svm.core.log.Log;
-import org.graalvm.compiler.word.Word;
 import org.graalvm.word.UnsignedWord;
 import org.graalvm.word.WordFactory;
 
