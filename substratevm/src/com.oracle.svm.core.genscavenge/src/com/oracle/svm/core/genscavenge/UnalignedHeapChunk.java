@@ -77,7 +77,7 @@ import jdk.graal.compiler.word.Word;
  *
  * The HeapChunk fields can be accessed as declared fields. The size of the card table depends on
  * the used {@link RememberedSet} implementation and may even be zero.
- * 
+ *
  * In this implementation, I am only implementing imprecise card remembered sets, so I only need one
  * entry for the whole Object. But for consistency I am treating it as a 1-element table.
  */
