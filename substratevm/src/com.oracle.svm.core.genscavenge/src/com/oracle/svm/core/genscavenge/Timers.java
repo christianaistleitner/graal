@@ -125,6 +125,8 @@ final class Timers {
     final Timer promotePinnedObjects = new Timer("promotePinnedObjects");
     final Timer rootScan = new Timer("rootScan");
     final Timer scanGreyObjects = new Timer("scanGreyObjects");
+    final Timer tenuredPlanning = new Timer("tenuredPlanning");
+    final Timer tenuredCompacting = new Timer("tenuredCompacting");
     final Timer releaseSpaces = new Timer("releaseSpaces");
     final Timer verifyAfter = new Timer("verifyAfter");
     final Timer verifyBefore = new Timer("verifyBefore");
@@ -152,6 +154,8 @@ final class Timers {
         blackenImageHeapRoots.reset();
         blackenDirtyCardRoots.reset();
         scanGreyObjects.reset();
+        tenuredPlanning.reset();
+        tenuredCompacting.reset();
         cleanCodeCache.reset();
         referenceObjects.reset();
         releaseSpaces.reset();
@@ -177,6 +181,8 @@ final class Timers {
             logOneTimer(log, "          ", blackenImageHeapRoots);
             logOneTimer(log, "          ", blackenDirtyCardRoots);
             logOneTimer(log, "          ", scanGreyObjects);
+            logOneTimer(log, "      ", tenuredPlanning);
+            logOneTimer(log, "      ", tenuredCompacting);
             logOneTimer(log, "      ", cleanCodeCache);
             logOneTimer(log, "      ", referenceObjects);
             logOneTimer(log, "      ", releaseSpaces);
