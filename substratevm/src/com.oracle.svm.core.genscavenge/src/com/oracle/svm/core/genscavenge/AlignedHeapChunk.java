@@ -82,13 +82,13 @@ public final class AlignedHeapChunk {
     public interface AlignedHeader extends HeapChunk.Header<AlignedHeader> {
 
         /**
-         * @return a pointer to the end of the first relocation info. or a null pointer if no gap exists
+         * @return A pointer to the end of the first relocation info, or a {@code null} pointer if no gap exists.
          */
         @RawField
         Pointer getFirstRelocationInfo();
 
         @RawField
-        void setFirstRelocationInfo(Pointer head);
+        void setFirstRelocationInfo(Pointer p);
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
