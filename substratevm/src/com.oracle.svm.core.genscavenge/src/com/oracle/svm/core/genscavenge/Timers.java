@@ -120,6 +120,7 @@ final class Timers {
     final Timer rootScan = new Timer("rootScan");
     final Timer scanGreyObjects = new Timer("scanGreyObjects");
     final Timer tenuredPlanning = new Timer("tenuredPlanning");
+    final Timer tenuredFixing = new Timer("tenuredFixing");
     final Timer tenuredCompacting = new Timer("tenuredCompacting");
     final Timer releaseSpaces = new Timer("releaseSpaces");
     final Timer verifyAfter = new Timer("verifyAfter");
@@ -149,6 +150,7 @@ final class Timers {
         blackenDirtyCardRoots.reset();
         scanGreyObjects.reset();
         tenuredPlanning.reset();
+        tenuredFixing.reset();
         tenuredCompacting.reset();
         cleanCodeCache.reset();
         referenceObjects.reset();
@@ -176,6 +178,7 @@ final class Timers {
             logOneTimer(log, "          ", blackenDirtyCardRoots);
             logOneTimer(log, "          ", scanGreyObjects);
             logOneTimer(log, "      ", tenuredPlanning);
+            logOneTimer(log, "      ", tenuredFixing);
             logOneTimer(log, "      ", tenuredCompacting);
             logOneTimer(log, "      ", cleanCodeCache);
             logOneTimer(log, "      ", referenceObjects);
