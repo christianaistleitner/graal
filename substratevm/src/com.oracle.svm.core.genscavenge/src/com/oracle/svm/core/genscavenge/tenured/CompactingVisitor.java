@@ -30,7 +30,6 @@ public class CompactingVisitor implements ObjectVisitor {
 
     @Override
     public boolean visitObject(Object obj) {
-        ObjectHeaderImpl.clearMarkedBit(obj);
         if (relocationInfoPointer.isNull()) {
             return true;
         }
@@ -62,7 +61,7 @@ public class CompactingVisitor implements ObjectVisitor {
         return true;
     }
 
-    public void setChunk(AlignedHeapChunk.AlignedHeader chunk) {
+    public void init(AlignedHeapChunk.AlignedHeader chunk) {
         this.chunk = chunk;
         relocationInfoPointer = chunk.getFirstRelocationInfo();
         nextRelocationInfoPointer = WordFactory.nullPointer();
@@ -74,6 +73,10 @@ public class CompactingVisitor implements ObjectVisitor {
             }
             relocationPointer = RelocationInfo.readRelocationPointer(relocationInfoPointer);
         }
+    }
+
+    public void finish() {
+        chunk.setFirstRelocationInfo(null);
     }
 
     private UnsignedWord copyObject(Object obj, Pointer dest) {
