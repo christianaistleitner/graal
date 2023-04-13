@@ -186,6 +186,7 @@ final class ReferenceObjectProcessing {
             if (!processRememberedRef(current) && ReferenceInternals.hasQueue(current)) {
                 // The referent is dead, so add it to the list of references that will be processed
                 // by the reference handler.
+                Log.log().string("referent died, ref=").object(current).newline().flush();
                 ReferenceInternals.setNextDiscovered(current, pendingHead);
                 pendingHead = current;
             } else {
@@ -219,14 +220,14 @@ final class ReferenceObjectProcessing {
         assert refPointer.isNonNull() : "Referent is null: should not have been discovered";
         assert !HeapImpl.getHeapImpl().isInImageHeap(refPointer) : "Image heap referent: should not have been discovered";
         Object refObject = refPointer.toObject();
-        if (isInOldSpace(refObject) && ObjectHeaderImpl.hasMarkedBit(refObject)) {
+        if (isInOldSpace(refObject)) {
             Object relocatedObject = RelocationInfo.getRelocatedObject(refPointer);
             ReferenceInternals.setReferent(dr, relocatedObject);
             Log.log().string("Updated Reference (relocated), dr=").object(dr)
                     .string(", oldReferent=").object(refObject)
                     .string(", newReferent=").zhex(Word.objectToUntrackedPointer(relocatedObject))
                     .newline().flush();
-            return true;
+            return relocatedObject != null;
         }
         if (maybeUpdateForwardedReference(dr, refPointer)) {
             return true;
@@ -242,7 +243,6 @@ final class ReferenceObjectProcessing {
          * static analysis must see that the field can be null. This means that we get a write
          * barrier for this store.
          */
-        Log.log().string("referent died, ref=").object(dr).newline().flush();
         ReferenceInternals.setReferent(dr, null);
         return false;
     }
