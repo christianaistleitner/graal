@@ -31,7 +31,7 @@ public class CompactingVisitor implements ObjectVisitor {
     @Override
     public boolean visitObject(Object obj) {
         if (relocationInfoPointer.isNull()) {
-            return true;
+            return false; // no gaps
         }
 
         Pointer objPointer = Word.objectToUntrackedPointer(obj);
