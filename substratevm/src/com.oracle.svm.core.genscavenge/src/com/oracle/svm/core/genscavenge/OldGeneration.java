@@ -27,7 +27,6 @@ package com.oracle.svm.core.genscavenge;
 import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.EXTREMELY_SLOW_PATH_PROBABILITY;
 import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.probability;
 
-import com.oracle.svm.core.NeverInline;
 import com.oracle.svm.core.code.RuntimeCodeInfoMemory;
 import com.oracle.svm.core.genscavenge.tenured.AllObjectsMarkingVisitor;
 import com.oracle.svm.core.genscavenge.tenured.CompactingVisitor;
@@ -134,10 +133,9 @@ public final class OldGeneration extends Generation {
 
     void planning() {
         // Phase 1: Compute and write relocation info
-        Log.log().string("[OldGeneration.compactAndReleaseSpaces: planning phase]").newline().flush();
         AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
         while (aChunk.isNonNull()) {
-            Log.log().string("[OldGeneration.sweep: planning phase, chunk=").zhex(aChunk).string("]").newline().flush();
+            Log.log().string("[OldGeneration.planning: planning phase, chunk=").zhex(aChunk).string("]").newline().flush();
             planningVisitor.init(aChunk);
             RelocationInfo.walkObjects(aChunk, planningVisitor);
             planningVisitor.finish();
@@ -147,10 +145,9 @@ public final class OldGeneration extends Generation {
 
     void fixing() {
         // Phase 2: Fix object references
-        Log.log().string("[OldGeneration.compactAndReleaseSpaces: fixing phase]").newline().flush();
         AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
         while (aChunk.isNonNull()) {
-            Log.log().string("[OldGeneration.compact: fixing phase, chunk=").zhex(aChunk)
+            Log.log().string("[OldGeneration.fixing: fixing phase, chunk=").zhex(aChunk)
                     .string(", top=").zhex(HeapChunk.getTopPointer(aChunk))
                     .string("]").newline().flush();
             fixingVisitor.setChunk(aChunk);
@@ -167,7 +164,7 @@ public final class OldGeneration extends Generation {
         GCImpl.getGCImpl().blackenStackRoots(refFixingVisitor);
         UnalignedHeapChunk.UnalignedHeader uChunk = space.getFirstUnalignedHeapChunk();
         while (uChunk.isNonNull()) {
-            Log.log().string("[OldGeneration.compact: fixing phase, chunk=").zhex(uChunk)
+            Log.log().string("[OldGeneration.fixing: fixing phase, chunk=").zhex(uChunk)
                     .string(", unaligned]").newline().flush();
             Pointer objPointer = UnalignedHeapChunk.getObjectStart(uChunk);
             Object obj = objPointer.toObject();
@@ -176,24 +173,39 @@ public final class OldGeneration extends Generation {
         }
     }
 
-    void compact() {
+    void compacting() {
         // Phase 3: Copy objects to their new location
-        Log.log().string("[OldGeneration.compactAndReleaseSpaces: compacting phase]").newline().flush();
-        AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
-        while (aChunk.isNonNull()) {
-            Log.log().string("[OldGeneration.compactAndReleaseSpaces: compacting phase, chunk=").zhex(aChunk)
-                    .string(", oldTop=").zhex(HeapChunk.getTopPointer(aChunk))
-                    .string(", firstRelocInfo=").zhex(aChunk.getFirstRelocationInfo())
-                    .string("]").newline().flush();
-            compactingVisitor.setChunk(aChunk);
-            RelocationInfo.walkObjects(aChunk, compactingVisitor);
-            RememberedSet.get().clearRememberedSet(aChunk);
-            RememberedSet.get().enableRememberedSetForChunk(aChunk); // update FirstObjectTable
-            aChunk.setFirstRelocationInfo(null);
-            Log.log().string("[OldGeneration.compactAndReleaseSpaces: compacting phase, chunk=").zhex(aChunk)
-                    .string(", newTop=").zhex(HeapChunk.getTopPointer(aChunk))
-                    .string("]").newline().flush();
-            aChunk = HeapChunk.getNext(aChunk);
+        AlignedHeapChunk.AlignedHeader chunk = space.getFirstAlignedHeapChunk();
+        while (chunk.isNonNull()) {
+            Log trace = Log.log().string("[OldGeneration.compacting: chunk=").zhex(chunk);
+
+            if (chunk.getFirstRelocationInfo().isNull()) {
+                /*
+                 * No compaction necessary as there are no gaps.
+                 */
+                trace.string(", skip");
+            } else if (false /* TODO */) {
+                /*
+                 * Skip compaction as fragmentation isn't severe enough.
+                 */
+                trace.string(", skip");
+            } else {
+                trace.string(", firstRelocationInfo=").zhex(chunk.getFirstRelocationInfo());
+                trace.string(", oldTop=").zhex(HeapChunk.getTopPointer(chunk));
+
+                compactingVisitor.init(chunk);
+                RelocationInfo.walkObjects(chunk, compactingVisitor);
+                compactingVisitor.finish();
+
+                RememberedSet.get().clearRememberedSet(chunk);
+                RememberedSet.get().enableRememberedSetForChunk(chunk); // update FirstObjectTable
+
+                trace.string(", newTop=").zhex(HeapChunk.getTopPointer(chunk));
+            }
+
+            trace.string("]").newline().flush();
+
+            chunk = HeapChunk.getNext(chunk);
         }
     }
 
