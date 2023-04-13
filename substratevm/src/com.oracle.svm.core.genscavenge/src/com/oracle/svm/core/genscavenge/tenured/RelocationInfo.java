@@ -127,13 +127,19 @@ public class RelocationInfo {
     }
 
     public static Object getRelocatedObject(Pointer p) {
-        return getRelocatedObjectPointer(p).toObject();
+        p = getRelocatedObjectPointer(p);
+        return p.isNull() ? null : p.toObject();
     }
 
     public static Pointer getRelocatedObjectPointer(Pointer p) {
         assert ObjectHeaderImpl.isAlignedObject(p.toObject()) : "Unaligned objects are not supported!";
 
         AlignedHeapChunk.AlignedHeader aChunk = AlignedHeapChunk.getEnclosingChunkFromObjectPointer(p);
+
+        if (HeapChunk.getTopPointer(aChunk).belowOrEqual(p)) {
+            return WordFactory.nullPointer(); // object didn't survive
+        }
+
         Pointer relocationInfo = aChunk.getFirstRelocationInfo();
         if (relocationInfo.isNull() || p.belowThan(relocationInfo)) {
             return p; // not relocated
@@ -143,6 +149,10 @@ public class RelocationInfo {
         while (nextRelocationInfo.isNonNull() && nextRelocationInfo.belowOrEqual(p)) {
             relocationInfo = nextRelocationInfo;
             nextRelocationInfo = RelocationInfo.getNextRelocationInfo(relocationInfo);
+        }
+
+        if (nextRelocationInfo.isNonNull() && nextRelocationInfo.subtract(RelocationInfo.readGapSize(nextRelocationInfo)).belowOrEqual(p)) {
+            return WordFactory.nullPointer(); // object didn't survive
         }
 
         assert relocationInfo.belowOrEqual(p);

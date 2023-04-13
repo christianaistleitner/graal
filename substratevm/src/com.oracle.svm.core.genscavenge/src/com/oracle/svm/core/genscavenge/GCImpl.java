@@ -517,7 +517,7 @@ public final class GCImpl implements GC {
                 try {
                     startTicks = JfrGCEvents.startGCPhasePause();
                     try {
-                        HeapImpl.getHeapImpl().getOldGeneration().compact();
+                        HeapImpl.getHeapImpl().getOldGeneration().compacting();
                     } finally {
                         JfrGCEvents.emitGCPhasePauseEvent(getCollectionEpoch(), "Tenured Compacting", startTicks);
                     }
