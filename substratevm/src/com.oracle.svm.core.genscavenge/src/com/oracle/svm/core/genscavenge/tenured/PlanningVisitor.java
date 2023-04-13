@@ -30,6 +30,8 @@ public class PlanningVisitor implements ObjectVisitor {
         Pointer objPointer = Word.objectToUntrackedPointer(obj);
         UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInGC(obj);
         if (ObjectHeaderImpl.hasMarkedBit(obj)) {
+            ObjectHeaderImpl.clearMarkedBit(obj);
+
             if (gapSize.notEqual(0)) {
                 Log.noopLog().string("Gap from ").zhex(objPointer.subtract(gapSize))
                         .string(" to ").zhex(objPointer)

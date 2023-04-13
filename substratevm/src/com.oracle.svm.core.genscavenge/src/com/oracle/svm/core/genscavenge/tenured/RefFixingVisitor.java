@@ -40,19 +40,19 @@ public class RefFixingVisitor implements ObjectReferenceVisitor {
             return true;
         }
 
-        if (isInOldSpace(holderObject) && !ObjectHeaderImpl.hasMarkedBit(holderObject)) {
-            Log.log().string("[ERROR: Fixing dead holder object died, obj=").object(obj)
-                    .string(", holderObject=").object(holderObject)
-                    .string("]\n").flush();
-            assert false : "Referred object died!";
-        }
+        // if (isInOldSpace(holderObject) && !ObjectHeaderImpl.hasMarkedBit(holderObject)) {
+        //     Log.log().string("[ERROR: Fixing dead holder object died, obj=").object(obj)
+        //             .string(", holderObject=").object(holderObject)
+        //             .string("]\n").flush();
+        //     assert false : "Referred object died!";
+        // }
 
-        if (!ObjectHeaderImpl.hasMarkedBit(obj)) {
-            Log.log().string("[ERROR: Referred object died, obj=").object(obj)
-                    .string(", holderObject=").object(holderObject)
-                    .string("]\n").flush();
-            assert false : "Referred object died!";
-        }
+        // if (!ObjectHeaderImpl.hasMarkedBit(obj)) {
+        //     Log.log().string("[ERROR: Referred object died, obj=").object(obj)
+        //             .string(", holderObject=").object(holderObject)
+        //             .string("]\n").flush();
+        //     assert false : "Referred object died!";
+        // }
 
         Pointer relocationInfo = AlignedHeapChunk.getEnclosingChunkFromObjectPointer(p).getFirstRelocationInfo();
         if (relocationInfo.isNull() || relocationInfo.aboveThan(p)) {
@@ -97,18 +97,18 @@ public class RefFixingVisitor implements ObjectReferenceVisitor {
                     .newline().flush();
         }
 
-        if (!ObjectHeaderImpl.hasMarkedBit(obj)) {
-            Log.log().string("Updated location but object is not marked, old=").zhex(p)
-                    .string(", new=").zhex(newLocation)
-                    .string(", diff=").signed(newLocation.subtract(p))
-                    .string(", holderObject=").object(holderObject)
-                    .string(", objRef=").zhex(objRef)
-                    .string(", innerOffset=").signed(innerOffset)
-                    .string(", compressed=").bool(compressed)
-                    .string(", relocationInfo=").zhex(relocationInfo)
-                    .string(", relocationPointer=").zhex(relocationPointer)
-                    .newline().flush();
-        }
+        // if (!ObjectHeaderImpl.hasMarkedBit(obj)) {
+        //     Log.log().string("Updated location but object is not marked, old=").zhex(p)
+        //             .string(", new=").zhex(newLocation)
+        //             .string(", diff=").signed(newLocation.subtract(p))
+        //             .string(", holderObject=").object(holderObject)
+        //             .string(", objRef=").zhex(objRef)
+        //             .string(", innerOffset=").signed(innerOffset)
+        //             .string(", compressed=").bool(compressed)
+        //             .string(", relocationInfo=").zhex(relocationInfo)
+        //             .string(", relocationPointer=").zhex(relocationPointer)
+        //             .newline().flush();
+        // }
 
         chunk = AlignedHeapChunk.getEnclosingChunkFromObjectPointer(p);
         if (AlignedHeapChunk.getObjectsStart(chunk).aboveThan(newLocation) || AlignedHeapChunk.getObjectsEnd(chunk).belowOrEqual(newLocation)) {
