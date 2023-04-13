@@ -143,8 +143,9 @@ public final class OldGeneration extends Generation {
         }
     }
 
-    void fixing() {
+    void fixing(Timers timers) {
         // Phase 2: Fix object references
+        timers.tenuredFixingAlignedChunks.open();
         AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
         while (aChunk.isNonNull()) {
             Log.log().string("[OldGeneration.fixing: fixing phase, chunk=").zhex(aChunk)
@@ -154,14 +155,29 @@ public final class OldGeneration extends Generation {
             RelocationInfo.walkObjects(aChunk, fixingVisitor);
             aChunk = HeapChunk.getNext(aChunk);
         }
+        timers.tenuredFixingAlignedChunks.close();
+
+        timers.tenuredFixingImageHeap.open();
         HeapImpl.getHeapImpl().walkImageHeapObjects(fixingVisitor);
+        timers.tenuredFixingImageHeap.close();
+
+        timers.tenuredFixingThreadLocal.open();
         ThreadLocalMTWalker.walk(refFixingVisitor);
+        timers.tenuredFixingThreadLocal.close();
+
+        timers.tenuredFixingRuntimeCodeCache.open();
         refFixingVisitor.debug = true;
         if (RuntimeCompilation.isEnabled()) {
             RuntimeCodeInfoMemory.singleton().walkRuntimeMethodsDuringGC(runtimeCodeCacheWalker);
         }
         refFixingVisitor.debug = false;
+        timers.tenuredFixingRuntimeCodeCache.close();
+
+        timers.tenuredFixingStack.open();
         GCImpl.getGCImpl().blackenStackRoots(refFixingVisitor);
+        timers.tenuredFixingStack.close();
+
+        timers.tenuredFixingUnalignedChunks.open();
         UnalignedHeapChunk.UnalignedHeader uChunk = space.getFirstUnalignedHeapChunk();
         while (uChunk.isNonNull()) {
             Log.log().string("[OldGeneration.fixing: fixing phase, chunk=").zhex(uChunk)
@@ -171,13 +187,14 @@ public final class OldGeneration extends Generation {
             fixingVisitor.visitObject(obj);
             uChunk = HeapChunk.getNext(uChunk);
         }
+        timers.tenuredFixingUnalignedChunks.close();
     }
 
-    void compacting() {
+    void compacting(Timers timers) {
         // Phase 3: Copy objects to their new location
         AlignedHeapChunk.AlignedHeader chunk = space.getFirstAlignedHeapChunk();
         while (chunk.isNonNull()) {
-            Log trace = Log.log().string("[OldGeneration.compacting: chunk=").zhex(chunk);
+            Log trace = Log.noopLog().string("[OldGeneration.compacting: chunk=").zhex(chunk);
 
             if (chunk.getFirstRelocationInfo().isNull()) {
                 /*
@@ -193,12 +210,16 @@ public final class OldGeneration extends Generation {
                 trace.string(", firstRelocationInfo=").zhex(chunk.getFirstRelocationInfo());
                 trace.string(", oldTop=").zhex(HeapChunk.getTopPointer(chunk));
 
+                timers.tenuredCompactingCunks.open();
                 compactingVisitor.init(chunk);
                 RelocationInfo.walkObjects(chunk, compactingVisitor);
                 compactingVisitor.finish();
+                timers.tenuredCompactingCunks.close();
 
+                timers.tenuredUpdatingRememberedSet.open();
                 RememberedSet.get().clearRememberedSet(chunk);
                 RememberedSet.get().enableRememberedSetForChunk(chunk); // update FirstObjectTable
+                timers.tenuredUpdatingRememberedSet.close();
 
                 trace.string(", newTop=").zhex(HeapChunk.getTopPointer(chunk));
             }
