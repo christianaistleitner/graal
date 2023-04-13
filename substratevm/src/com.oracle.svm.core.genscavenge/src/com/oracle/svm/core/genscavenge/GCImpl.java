@@ -482,7 +482,7 @@ public final class GCImpl implements GC {
                 try {
                     startTicks = JfrGCEvents.startGCPhasePause();
                     try {
-                        HeapImpl.getHeapImpl().getOldGeneration().sweep();
+                        HeapImpl.getHeapImpl().getOldGeneration().planning();
                     } finally {
                         JfrGCEvents.emitGCPhasePauseEvent(getCollectionEpoch(), "Tenured Planning", startTicks);
                     }
@@ -505,6 +505,18 @@ public final class GCImpl implements GC {
             }
 
             if (!incremental) {
+                Timer tenuredFixingTimer = timers.tenuredFixing.open();
+                try {
+                    startTicks = JfrGCEvents.startGCPhasePause();
+                    try {
+                        HeapImpl.getHeapImpl().getOldGeneration().fixing();
+                    } finally {
+                        JfrGCEvents.emitGCPhasePauseEvent(getCollectionEpoch(), "Tenured Fixing", startTicks);
+                    }
+                } finally {
+                    tenuredFixingTimer.close();
+                }
+
                 Timer tenuredCompactingTimer = timers.tenuredCompacting.open();
                 try {
                     startTicks = JfrGCEvents.startGCPhasePause();
