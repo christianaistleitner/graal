@@ -132,7 +132,7 @@ public final class OldGeneration extends Generation {
         // TODO: Pinned objects mustn't move when compressing chunks!
     }
 
-    void sweep() {
+    void planning() {
         // Phase 1: Compute and write relocation info
         Log.log().string("[OldGeneration.compactAndReleaseSpaces: planning phase]").newline().flush();
         AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
@@ -145,8 +145,7 @@ public final class OldGeneration extends Generation {
         }
     }
 
-    @NeverInline("")
-    void compact() {
+    void fixing() {
         // Phase 2: Fix object references
         Log.log().string("[OldGeneration.compactAndReleaseSpaces: fixing phase]").newline().flush();
         AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
@@ -175,10 +174,12 @@ public final class OldGeneration extends Generation {
             fixingVisitor.visitObject(obj);
             uChunk = HeapChunk.getNext(uChunk);
         }
+    }
 
+    void compact() {
         // Phase 3: Copy objects to their new location
         Log.log().string("[OldGeneration.compactAndReleaseSpaces: compacting phase]").newline().flush();
-        aChunk = space.getFirstAlignedHeapChunk();
+        AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
         while (aChunk.isNonNull()) {
             Log.log().string("[OldGeneration.compactAndReleaseSpaces: compacting phase, chunk=").zhex(aChunk)
                     .string(", oldTop=").zhex(HeapChunk.getTopPointer(aChunk))
