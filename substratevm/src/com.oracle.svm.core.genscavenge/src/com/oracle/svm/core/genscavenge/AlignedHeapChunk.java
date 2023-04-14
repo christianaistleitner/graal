@@ -41,6 +41,7 @@ import com.oracle.svm.core.Uninterruptible;
 import com.oracle.svm.core.feature.AutomaticallyRegisteredImageSingleton;
 import com.oracle.svm.core.genscavenge.remset.RememberedSet;
 import com.oracle.svm.core.heap.ObjectVisitor;
+import com.oracle.svm.core.heap.RestrictHeapAccess;
 import com.oracle.svm.core.util.PointerUtils;
 
 /**
@@ -184,5 +185,35 @@ public final class AlignedHeapChunk {
         public UnsignedWord getAllocationStart(AlignedHeapChunk.AlignedHeader heapChunk) {
             return getObjectsStart(heapChunk);
         }
+    }
+
+    /**
+     * Supply a closure to be applied to {@link AlignedHeapChunk}s.
+     */
+    public interface Visitor {
+
+        /**
+         * Visit an {@link AlignedHeapChunk}.
+         *
+         * @param chunk The {@link AlignedHeapChunk} to be visited.
+         * @return {@code true} if visiting should continue, {@code false} if visiting should stop.
+         */
+        @RestrictHeapAccess(
+                access = RestrictHeapAccess.Access.NO_ALLOCATION,
+                reason = "Must not allocate while visiting the heap."
+        )
+        boolean visitChunk(AlignedHeapChunk.AlignedHeader chunk);
+
+        /**
+         * Visit an {@link AlignedHeapChunk} like {@link #visitChunk}, but inlined for performance.
+         *
+         * @param chunk The {@link AlignedHeapChunk} to be visited.
+         * @return {@code true} if visiting should continue, {@code false} if visiting should stop.
+         */
+        @RestrictHeapAccess(
+                access = RestrictHeapAccess.Access.NO_ALLOCATION,
+                reason = "Must not allocate while visiting the heap."
+        )
+        boolean visitChunkInline(AlignedHeapChunk.AlignedHeader chunk);
     }
 }
