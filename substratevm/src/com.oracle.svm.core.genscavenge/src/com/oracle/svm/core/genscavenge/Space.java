@@ -529,6 +529,17 @@ public final class Space {
         return continueVisiting;
     }
 
+    boolean walkAlignedHeapChunks(AlignedHeapChunk.Visitor visitor) {
+        AlignedHeapChunk.AlignedHeader chunk = getFirstAlignedHeapChunk();
+        while (chunk.isNonNull()) {
+            if (!visitor.visitChunkInline(chunk)) {
+                return false;
+            }
+            chunk = HeapChunk.getNext(chunk);
+        }
+        return true;
+    }
+
     /**
      * This value is only updated during a GC. Be careful when calling this method during a GC as it
      * might wrongly include chunks that will be freed at the end of the GC.
