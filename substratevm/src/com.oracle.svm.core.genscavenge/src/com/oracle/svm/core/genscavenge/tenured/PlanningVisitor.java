@@ -1,10 +1,14 @@
 package com.oracle.svm.core.genscavenge.tenured;
 
 import org.graalvm.compiler.word.Word;
+import org.graalvm.nativeimage.Platform;
+import org.graalvm.nativeimage.Platforms;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
 import org.graalvm.word.WordFactory;
 
+import com.oracle.svm.core.AlwaysInline;
+import com.oracle.svm.core.NeverInline;
 import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
 import com.oracle.svm.core.genscavenge.HeapChunk;
@@ -26,11 +30,25 @@ public class PlanningVisitor implements ObjectVisitor {
 
     private UnsignedWord gapSize;
 
-    public boolean visitObject(Object obj) {
-        Pointer objPointer = Word.objectToUntrackedPointer(obj);
-        UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInGC(obj);
+    @Platforms(Platform.HOSTED_ONLY.class)
+    public PlanningVisitor() {
+    }
+
+    @Override
+    @NeverInline("Non-performance critical version")
+    public boolean visitObject(Object o) {
+        return visitObjectInline(o);
+    }
+
+    @Override
+    @AlwaysInline("GC performance")
+    public boolean visitObjectInline(Object obj) {
+        UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj);
+
         if (ObjectHeaderImpl.hasMarkedBit(obj)) {
             ObjectHeaderImpl.clearMarkedBit(obj);
+
+            Pointer objPointer = Word.objectToUntrackedPointer(obj);
 
             if (gapSize.notEqual(0)) {
                 Log.noopLog().string("Gap from ").zhex(objPointer.subtract(gapSize))
@@ -68,7 +86,18 @@ public class PlanningVisitor implements ObjectVisitor {
 
                 gapSize = WordFactory.zero();
             }
-            relocationPointer = relocationPointer.add(getMovedObjectSize(obj));
+
+            /*
+             * Adding the optional identity hash field will increase the object's size.
+             */
+            if (!ConfigurationValues.getObjectLayout().hasFixedIdentityHashField()) {
+                Word header = ObjectHeaderImpl.readHeaderFromObject(obj);
+                if (probability(SLOW_PATH_PROBABILITY, ObjectHeaderImpl.hasIdentityHashFromAddressInline(header))) {
+                    objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj, true);
+                }
+            }
+
+            relocationPointer = relocationPointer.add(objSize);
         } else {
             gapSize = gapSize.add(objSize);
         }
@@ -96,15 +125,5 @@ public class PlanningVisitor implements ObjectVisitor {
 
             chunk.setTopOffset(chunk.getTopOffset().subtract(gapSize));
         }
-    }
-
-    private static UnsignedWord getMovedObjectSize(Object obj) {
-        if (!ConfigurationValues.getObjectLayout().hasFixedIdentityHashField()) {
-            Word header = ObjectHeaderImpl.readHeaderFromObject(obj);
-            if (probability(SLOW_PATH_PROBABILITY, ObjectHeaderImpl.hasIdentityHashFromAddressInline(header))) {
-                return LayoutEncoding.getSizeFromObjectInlineInGC(obj, true);
-            }
-        }
-        return LayoutEncoding.getSizeFromObjectInlineInGC(obj, false);
     }
 }
