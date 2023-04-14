@@ -1,34 +1,23 @@
 package com.oracle.svm.core.genscavenge.tenured;
 
-import org.graalvm.compiler.word.Word;
-import org.graalvm.nativeimage.Platform;
-import org.graalvm.nativeimage.Platforms;
-import org.graalvm.word.Pointer;
-import org.graalvm.word.UnsignedWord;
-import org.graalvm.word.WordFactory;
-
 import com.oracle.svm.core.AlwaysInline;
 import com.oracle.svm.core.NeverInline;
 import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
 import com.oracle.svm.core.genscavenge.HeapChunk;
 import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
-import com.oracle.svm.core.heap.ObjectVisitor;
 import com.oracle.svm.core.hub.LayoutEncoding;
-import com.oracle.svm.core.log.Log;
+import jdk.graal.compiler.word.Word;
+import org.graalvm.nativeimage.Platform;
+import org.graalvm.nativeimage.Platforms;
+import org.graalvm.word.Pointer;
+import org.graalvm.word.UnsignedWord;
+import org.graalvm.word.WordFactory;
 
 import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.SLOW_PATH_PROBABILITY;
 import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.probability;
 
-public class PlanningVisitor implements ObjectVisitor {
-
-    private AlignedHeapChunk.AlignedHeader chunk;
-
-    private Pointer relocationInfoPointer;
-
-    private Pointer relocationPointer;
-
-    private UnsignedWord gapSize;
+public class PlanningVisitor implements AlignedHeapChunk.Visitor {
 
     @Platforms(Platform.HOSTED_ONLY.class)
     public PlanningVisitor() {
@@ -36,94 +25,75 @@ public class PlanningVisitor implements ObjectVisitor {
 
     @Override
     @NeverInline("Non-performance critical version")
-    public boolean visitObject(Object o) {
-        return visitObjectInline(o);
+    public boolean visitChunk(AlignedHeapChunk.AlignedHeader chunk) {
+        return visitChunkInline(chunk);
     }
 
     @Override
     @AlwaysInline("GC performance")
-    public boolean visitObjectInline(Object obj) {
-        UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj);
+    public boolean visitChunkInline(AlignedHeapChunk.AlignedHeader chunk) {
+        Pointer cursor = AlignedHeapChunk.getObjectsStart(chunk);
+        Pointer top = HeapChunk.getTopPointer(chunk); // top can't move here, therefore it's fine to read once
 
-        if (ObjectHeaderImpl.hasMarkedBit(obj)) {
-            ObjectHeaderImpl.clearMarkedBit(obj);
+        Pointer relocationInfoPointer = WordFactory.nullPointer();
+        Pointer relocationPointer = AlignedHeapChunk.getObjectsStart(chunk);
+        UnsignedWord gapSize = WordFactory.zero();
 
-            Pointer objPointer = Word.objectToUntrackedPointer(obj);
+        while (cursor.belowThan(top)) {
+            Object obj = cursor.toObject();
+            UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj);
 
-            if (gapSize.notEqual(0)) {
-                Log.noopLog().string("Gap from ").zhex(objPointer.subtract(gapSize))
-                        .string(" to ").zhex(objPointer)
-                        .string(" (").unsigned(gapSize).string(" bytes)")
-                        .newline().flush();
+            if (ObjectHeaderImpl.hasMarkedBit(obj)) {
+                ObjectHeaderImpl.clearMarkedBit(obj);
 
-                /*
-                 * Update previous relocation info or set the chunk's "FirstRelocationInfo" pointer.
-                 */
-                if (relocationInfoPointer.isNull()) {
-                    chunk.setFirstRelocationInfo(objPointer);
-                } else {
-                    int offset = (int) objPointer.subtract(relocationInfoPointer).rawValue();
-                    RelocationInfo.writeNextPlugOffset(relocationInfoPointer, offset);
+                if (gapSize.notEqual(0)) {
 
-                    Log.noopLog().string("Updated relocation info at ").zhex(relocationInfoPointer)
-                            .string(": nextPlugOffset=").zhex(offset)
-                            .newline().flush();
+                    /*
+                     * Update previous relocation info or set the chunk's "FirstRelocationInfo" pointer.
+                     */
+                    if (relocationInfoPointer.isNull()) {
+                        chunk.setFirstRelocationInfo(cursor);
+                    } else {
+                        int offset = (int) cursor.subtract(relocationInfoPointer).rawValue();
+                        RelocationInfo.writeNextPlugOffset(relocationInfoPointer, offset);
+                    }
+
+                    /*
+                     * Write the current relocation info at the gap end.
+                     */
+                    relocationInfoPointer = cursor;
+                    RelocationInfo.writeRelocationPointer(relocationInfoPointer, relocationPointer);
+                    RelocationInfo.writeGapSize(relocationInfoPointer, (int) gapSize.rawValue());
+                    RelocationInfo.writeNextPlugOffset(relocationInfoPointer, 0);
+
+                    gapSize = WordFactory.zero();
                 }
 
                 /*
-                 * Write the current relocation info at the gap end.
+                 * Adding the optional identity hash field will increase the object's size.
                  */
-                relocationInfoPointer = objPointer;
-                RelocationInfo.writeRelocationPointer(relocationInfoPointer, relocationPointer);
-                RelocationInfo.writeGapSize(relocationInfoPointer, (int) gapSize.rawValue());
-                RelocationInfo.writeNextPlugOffset(relocationInfoPointer, 0);
-
-                Log.noopLog().string("Wrote relocation info at ").zhex(relocationInfoPointer)
-                        .string(": relocationPointer=").zhex(relocationPointer)
-                        .string(": gapSize=").unsigned(gapSize)
-                        .string(": nextPlugOffset=").zhex(0)
-                        .newline().flush();
-
-                gapSize = WordFactory.zero();
-            }
-
-            /*
-             * Adding the optional identity hash field will increase the object's size.
-             */
-            if (!ConfigurationValues.getObjectLayout().hasFixedIdentityHashField()) {
-                Word header = ObjectHeaderImpl.readHeaderFromObject(obj);
-                if (probability(SLOW_PATH_PROBABILITY, ObjectHeaderImpl.hasIdentityHashFromAddressInline(header))) {
-                    objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj, true);
+                if (!ConfigurationValues.getObjectLayout().hasFixedIdentityHashField()) {
+                    Word header = ObjectHeaderImpl.readHeaderFromObject(obj);
+                    if (probability(SLOW_PATH_PROBABILITY, ObjectHeaderImpl.hasIdentityHashFromAddressInline(header))) {
+                        objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj, true);
+                    }
                 }
+
+                relocationPointer = relocationPointer.add(objSize);
+            } else {
+                gapSize = gapSize.add(objSize);
             }
 
-            relocationPointer = relocationPointer.add(objSize);
-        } else {
-            gapSize = gapSize.add(objSize);
+            cursor = cursor.add(objSize);
         }
-        return true;
-    }
 
-    public void init(AlignedHeapChunk.AlignedHeader chunk) {
-        this.chunk = chunk;
-        this.relocationInfoPointer = WordFactory.nullPointer();
-        this.relocationPointer = AlignedHeapChunk.getObjectsStart(chunk);
-        this.gapSize =  WordFactory.zero();
-    }
-
-    public void finish() {
         /*
          * Check for a gap at chunk end that requires updating the chunk top offset to clear that memory.
          */
         if (gapSize.notEqual(0)) {
-            Pointer topPointer = HeapChunk.getTopPointer(chunk);
-            Pointer gapStart = topPointer.subtract(gapSize);
-            Log.noopLog().string("Gap at chunk end from ").zhex(gapStart)
-                    .string(" to ").zhex(topPointer)
-                    .string(" (").unsigned(gapSize).string(" bytes)")
-                    .newline().flush();
-
             chunk.setTopOffset(chunk.getTopOffset().subtract(gapSize));
         }
+
+        return true;
     }
 }
