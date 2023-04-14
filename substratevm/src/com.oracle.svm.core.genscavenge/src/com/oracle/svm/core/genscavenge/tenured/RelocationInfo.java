@@ -118,7 +118,7 @@ public class RelocationInfo {
             Object obj = cursor.toObject();
             UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj);
 
-            if (!visitor.visitObject(obj)) {
+            if (!visitor.visitObjectInline(obj)) {
                 return;
             }
 
