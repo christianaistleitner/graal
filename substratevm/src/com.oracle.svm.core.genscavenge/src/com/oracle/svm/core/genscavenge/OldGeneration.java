@@ -137,18 +137,7 @@ public final class OldGeneration extends Generation {
 
     void planning() {
         // Phase 1: Compute and write relocation info
-        AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
-        while (aChunk.isNonNull()) {
-            Log.noopLog().string("[OldGeneration.planning: planning phase")
-                    .string(", chunk=").zhex(aChunk)
-                    .string("]").newline().flush();
-
-            planningVisitor.init(aChunk);
-            AlignedHeapChunk.walkObjectsInline(aChunk, planningVisitor);
-            planningVisitor.finish();
-
-            aChunk = HeapChunk.getNext(aChunk);
-        }
+        space.walkAlignedHeapChunks(planningVisitor);
     }
 
     void fixing(Timers timers) {
