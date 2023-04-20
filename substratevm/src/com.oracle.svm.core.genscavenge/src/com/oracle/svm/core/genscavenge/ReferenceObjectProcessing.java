@@ -55,7 +55,7 @@ import com.oracle.svm.core.util.UnsignedUtils;
 /** Discovers and handles {@link Reference} objects during garbage collection. */
 final class ReferenceObjectProcessing {
     /** Head of the linked list of discovered references that need to be revisited. */
-    static Reference<?> rememberedRefsList; // TODO: broken
+    private static Reference<?> rememberedRefsList;
 
     /**
      * For a {@link SoftReference}, the longest duration after its last access to keep its referent
@@ -149,16 +149,9 @@ final class ReferenceObjectProcessing {
             }
         }
 
-        if (Heap.getHeap().isInImageHeap(refObject)) {
-            Log.log().string("NOOOOOOO...").newline().flush();
-        }
-
         // When we reach this point, then we don't know if the referent will survive or not. So,
         // lets add the reference to the list of remembered references. All remembered references
         // are revisited after the GC finished promoting all strongly reachable objects.
-
-        Log.log().string("Added element to remembered refs list, referent=")
-                .zhex(ReferenceInternals.getReferentPointer(dr)).newline().flush();
 
         // null link means undiscovered, avoid for the last node with a cyclic reference
         Reference<?> next = (rememberedRefsList != null) ? rememberedRefsList : dr;
@@ -186,7 +179,7 @@ final class ReferenceObjectProcessing {
             if (!processRememberedRef(current) && ReferenceInternals.hasQueue(current)) {
                 // The referent is dead, so add it to the list of references that will be processed
                 // by the reference handler.
-                Log.log().string("referent died, ref=").object(current).newline().flush();
+                Log.log().string("Referent died, dr=").object(current).newline().flush();
                 ReferenceInternals.setNextDiscovered(current, pendingHead);
                 pendingHead = current;
             } else {
@@ -257,29 +250,11 @@ final class ReferenceObjectProcessing {
                 return false;
             }
             Object forwardedObj = ohi.getForwardedObject(referentAddr);
-            Log.log().string("Updated Reference A, referent=").object(forwardedObj).newline().flush();
+            Log.log().string("Updated Reference (forwarded), dr=").object(dr)
+                    .string(", oldReferent=").zhex(referentAddr)
+                    .string(", newReferent=").object(forwardedObj)
+                    .newline().flush();
             ReferenceInternals.setReferent(dr, forwardedObj);
-            return true;
-        }
-        return false;
-    }
-
-    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
-    private static boolean maybeUpdateReference(Reference<?> dr, Pointer referentAddr) {
-        ObjectHeaderImpl ohi = ObjectHeaderImpl.getObjectHeaderImpl();
-        UnsignedWord header = ohi.readHeaderFromPointer(referentAddr);
-        Space space = HeapChunk.getSpace(HeapChunk.getEnclosingHeapChunk(referentAddr, header));
-        if (ObjectHeaderImpl.isForwardedHeader(header)) {
-            assert !space.isOldSpace();
-            Object forwardedObj = ohi.getForwardedObject(referentAddr);
-            Log.log().string("Updated Reference C, referent=").object(forwardedObj).newline().flush();
-            ReferenceInternals.setReferent(dr, forwardedObj);
-            return true;
-        }
-        if (ObjectHeaderImpl.hasMarkedBit(header) && space.isOldSpace()) {
-            Object relocatedObj = RelocationInfo.getRelocatedObject(referentAddr);
-            Log.log().string("Updated Reference B, referent=").object(relocatedObj).newline().flush();
-            ReferenceInternals.setReferent(dr, relocatedObj);
             return true;
         }
         return false;
@@ -302,16 +277,5 @@ final class ReferenceObjectProcessing {
             }
         }
         return false;
-    }
-
-    private static boolean willRequireOldGenFixup(Object obj) {
-        HeapChunk.Header<?> chunk;
-        if (ObjectHeaderImpl.isAlignedObject(obj)) {
-            chunk = AlignedHeapChunk.getEnclosingChunk(obj);
-        } else {
-            chunk = UnalignedHeapChunk.getEnclosingChunk(obj);
-        }
-        Space space = HeapChunk.getSpace(chunk);
-        return space.isOldSpace();
     }
 }
