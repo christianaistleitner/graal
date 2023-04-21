@@ -94,7 +94,7 @@ public final class OldGeneration extends Generation {
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     @Override
     public Object promoteAlignedObject(Object original, AlignedHeapChunk.AlignedHeader originalChunk, Space originalSpace) {
-        assert originalSpace.isFromSpace();
+        assert originalSpace.isFromSpace() && !originalSpace.isOldSpace();
         Object copy = getSpace().promoteAlignedObject(original, originalSpace);
         ObjectHeaderImpl.setMarkedBit(copy);
         return copy;
@@ -137,6 +137,7 @@ public final class OldGeneration extends Generation {
 
     void planning() {
         // Phase 1: Compute and write relocation info
+        planningVisitor.init(space);
         space.walkAlignedHeapChunks(planningVisitor);
     }
 
@@ -148,7 +149,6 @@ public final class OldGeneration extends Generation {
             Log.log().string("[OldGeneration.fixing: fixing phase, chunk=").zhex(aChunk)
                     .string(", top=").zhex(HeapChunk.getTopPointer(aChunk))
                     .string("]").newline().flush();
-            fixingVisitor.setChunk(aChunk);
             RelocationInfo.walkObjects(aChunk, fixingVisitor);
             aChunk = HeapChunk.getNext(aChunk);
         }
@@ -189,42 +189,34 @@ public final class OldGeneration extends Generation {
 
     void compacting(Timers timers) {
         // Phase 3: Copy objects to their new location
+        timers.tenuredCompactingCunks.open();
         AlignedHeapChunk.AlignedHeader chunk = space.getFirstAlignedHeapChunk();
         while (chunk.isNonNull()) {
-            Log trace = Log.noopLog().string("[OldGeneration.compacting: chunk=").zhex(chunk);
+            Log.log().string("[OldGeneration.compacting: chunk=").zhex(chunk)
+                    .string("]\n").flush();
 
-            if (chunk.getFirstRelocationInfo().isNull()) {
-                /*
-                 * No compaction necessary as there are no gaps.
-                 */
-                trace.string(", skip");
-            } else if (false /* TODO */) {
-                /*
-                 * Skip compaction as fragmentation isn't severe enough.
-                 */
-                trace.string(", skip");
-            } else {
-                trace.string(", firstRelocationInfo=").zhex(chunk.getFirstRelocationInfo());
-                trace.string(", oldTop=").zhex(HeapChunk.getTopPointer(chunk));
-
-                timers.tenuredCompactingCunks.open();
-                compactingVisitor.init(chunk);
-                RelocationInfo.walkObjects(chunk, compactingVisitor);
-                compactingVisitor.finish();
-                timers.tenuredCompactingCunks.close();
-
-                timers.tenuredUpdatingRememberedSet.open();
-                RememberedSet.get().clearRememberedSet(chunk);
-                RememberedSet.get().enableRememberedSetForChunk(chunk); // update FirstObjectTable
-                timers.tenuredUpdatingRememberedSet.close();
-
-                trace.string(", newTop=").zhex(HeapChunk.getTopPointer(chunk));
-            }
-
-            trace.string("]").newline().flush();
+            compactingVisitor.init(chunk);
+            RelocationInfo.walkObjects(chunk, compactingVisitor);
+            compactingVisitor.finish();
 
             chunk = HeapChunk.getNext(chunk);
         }
+        timers.tenuredCompactingCunks.close();
+
+        chunk = space.getFirstAlignedHeapChunk();
+        timers.tenuredUpdatingRememberedSet.open();
+        while (chunk.isNonNull()) {
+            Log.log().string("[OldGeneration.compacting: chunk=").zhex(chunk)
+                    .string(", top=").zhex(HeapChunk.getTopPointer(chunk))
+                    .string(", done]\n").flush();
+
+            // clear CardTable and update FirstObjectTable
+            // TODO: Build the FirstObjectTable during compaction.
+            RememberedSet.get().enableRememberedSetForChunk(chunk);
+
+            chunk = HeapChunk.getNext(chunk);
+        }
+        timers.tenuredUpdatingRememberedSet.close();
     }
 
     void releaseSpaces(ChunkReleaser chunkReleaser) {
