@@ -1112,7 +1112,6 @@ public final class GCImpl implements GC {
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     private void promotePinnedObject(PinnedObjectImpl pinned) {
-        Log.log().string("Promoted pinned object!!!!!!!!\n").flush();
         HeapImpl heap = HeapImpl.getHeapImpl();
         Object referent = pinned.getObject();
         if (referent != null && !heap.isInImageHeap(referent)) {
