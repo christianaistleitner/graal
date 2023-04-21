@@ -82,47 +82,19 @@ public class CompactingVisitor implements ObjectVisitor {
     private UnsignedWord copyObject(Object obj, Pointer dest) {
         assert VMOperation.isGCInProgress();
         assert ObjectHeaderImpl.isAlignedObject(obj);
+        assert dest.isNonNull();
 
-        // TODO: code cleanup
+        UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj);
+        Pointer src = Word.objectToUntrackedPointer(obj);
 
-        UnsignedWord originalSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj, false);
-        UnsignedWord copySize = originalSize;
-        boolean addIdentityHashField = false;
-        if (!ConfigurationValues.getObjectLayout().hasFixedIdentityHashField()) {
-            Word header = ObjectHeaderImpl.readHeaderFromObject(obj);
-            if (probability(SLOW_PATH_PROBABILITY, ObjectHeaderImpl.hasIdentityHashFromAddressInline(header))) {
-                addIdentityHashField = true;
-                copySize = LayoutEncoding.getSizeFromObjectInlineInGC(obj, true);
-            }
-        }
-
-        if (probability(VERY_SLOW_PATH_PROBABILITY, dest.isNull())) {
-            return WordFactory.zero();
-        }
-
-        /*
-         * This does a direct memory copy, without regard to whether the copied data contains object
-         * references. That's okay, because all references in the copy are visited and overwritten
-         * later on anyways (the card table is also updated at that point if necessary).
-         */
-        Pointer originalMemory = Word.objectToUntrackedPointer(obj);
-        Log.noopLog().string("Copying object from ").zhex(originalMemory).character('-').zhex(originalMemory.add(originalSize))
-                .string(" (").unsigned(originalSize).string(" B)")
-                .string(" to ").zhex(dest).character('-').zhex(dest.add(copySize))
-                .string(" (").unsigned(copySize).string(" B)")
+        Log.noopLog().string("Copying object from ").zhex(src).character('-').zhex(src.add(objSize))
+                .string(" (").unsigned(objSize).string(" B)")
+                .string(" to ").zhex(dest).character('-').zhex(dest.add(objSize))
+                .string(" (").unsigned(objSize).string(" B)")
                 .newline().flush();
-        UnmanagedMemoryUtil.copyLongsForward(originalMemory, dest, copySize);
 
-        if (probability(SLOW_PATH_PROBABILITY, addIdentityHashField)) {
-            Log.log().string("Added identity hash field!\n").flush();
-            Object copy = dest.toObject();
-            // Must do first: ensures correct object size below and in other places
-            int value = IdentityHashCodeSupport.computeHashCodeFromAddress(obj);
-            int offset = LayoutEncoding.getOptionalIdentityHashOffset(copy);
-            ObjectAccess.writeInt(copy, offset, value, IdentityHashCodeSupport.IDENTITY_HASHCODE_LOCATION);
-            ObjectHeaderImpl.getObjectHeaderImpl().setIdentityHashInField(copy);
-        }
+        UnmanagedMemoryUtil.copyLongsForward(src, dest, objSize);
 
-        return copySize;
+        return objSize;
     }
 }
