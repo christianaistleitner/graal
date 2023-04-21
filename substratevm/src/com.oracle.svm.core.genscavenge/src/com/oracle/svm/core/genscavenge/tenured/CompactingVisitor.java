@@ -5,6 +5,7 @@ import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
 import com.oracle.svm.core.genscavenge.HeapChunk;
 import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
+import com.oracle.svm.core.genscavenge.remset.RememberedSet;
 import com.oracle.svm.core.heap.ObjectVisitor;
 import com.oracle.svm.core.hub.LayoutEncoding;
 import com.oracle.svm.core.identityhashcode.IdentityHashCodeSupport;
@@ -56,14 +57,27 @@ public class CompactingVisitor implements ObjectVisitor {
 
         UnsignedWord copySize = copyObject(obj, newLocation);
 
-        HeapChunk.setTopPointer(chunk, newLocation.add(copySize));
+        AlignedHeapChunk.AlignedHeader newChunk = AlignedHeapChunk.getEnclosingChunkFromObjectPointer(newLocation);
+        HeapChunk.setTopPointer(
+                newChunk,
+                newLocation.add(copySize)
+        );
+
+        if (chunk.notEqual(newChunk)) {
+            HeapChunk.setTopPointer(
+                    chunk,
+                    AlignedHeapChunk.getObjectsStart(chunk)
+            );
+        }
+
+        RememberedSet.get().enableRememberedSetForObject(newChunk, newLocation.toObject());
 
         return true;
     }
 
     public void init(AlignedHeapChunk.AlignedHeader chunk) {
         this.chunk = chunk;
-        relocationInfoPointer = chunk.getFirstRelocationInfo();
+        relocationInfoPointer = AlignedHeapChunk.getObjectsStart(chunk);
         nextRelocationInfoPointer = WordFactory.nullPointer();
         relocationPointer = WordFactory.nullPointer();
         if (relocationInfoPointer.isNonNull()) {
@@ -76,7 +90,6 @@ public class CompactingVisitor implements ObjectVisitor {
     }
 
     public void finish() {
-        chunk.setFirstRelocationInfo(null);
     }
 
     private UnsignedWord copyObject(Object obj, Pointer dest) {

@@ -108,7 +108,7 @@ import com.oracle.svm.core.util.UnsignedUtils;
  * <p>
  * Implementation note: Table entries are bytes but converted to and from ints with bounds checks.
  */
-final class FirstObjectTable {
+public final class FirstObjectTable {
     /**
      * The number of bytes of memory covered by an entry. Since the indexes into the CardTable are
      * used to index into the FirstObjectTable, these need to have the same value.

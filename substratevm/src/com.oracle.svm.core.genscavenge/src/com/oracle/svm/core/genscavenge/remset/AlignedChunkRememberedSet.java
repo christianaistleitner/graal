@@ -46,11 +46,12 @@ import com.oracle.svm.core.genscavenge.HeapParameters;
 import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
 import com.oracle.svm.core.hub.LayoutEncoding;
 import com.oracle.svm.core.image.ImageHeapObject;
+import com.oracle.svm.core.log.Log;
 import com.oracle.svm.core.util.HostedByteBufferPointer;
 import com.oracle.svm.core.util.PointerUtils;
 import com.oracle.svm.core.util.UnsignedUtils;
 
-final class AlignedChunkRememberedSet {
+public final class AlignedChunkRememberedSet {
     private AlignedChunkRememberedSet() {
     }
 
@@ -91,6 +92,7 @@ final class AlignedChunkRememberedSet {
         Pointer objectsStart = AlignedHeapChunk.getObjectsStart(chunk);
         Pointer startOffset = Word.objectToUntrackedPointer(obj).subtract(objectsStart);
         Pointer endOffset = LayoutEncoding.getObjectEndInGC(obj).subtract(objectsStart);
+        Log.log().string("RS, start=").zhex(startOffset).string(", end=").zhex(endOffset).newline().flush();
         FirstObjectTable.setTableForObject(fotStart, startOffset, endOffset);
         ObjectHeaderImpl.setRememberedSetBit(obj);
     }
@@ -196,6 +198,7 @@ final class AlignedChunkRememberedSet {
     }
 
     public static boolean verify(AlignedHeader chunk) {
+        Log.log().string("[AlignedChunkRememberedSet.verify: chunk=").zhex(chunk).string("]\n").flush();
         boolean success = true;
         success &= CardTable.verify(getCardTableStart(chunk), AlignedHeapChunk.getObjectsStart(chunk), HeapChunk.getTopPointer(chunk));
         success &= FirstObjectTable.verify(getFirstObjectTableStart(chunk), AlignedHeapChunk.getObjectsStart(chunk), HeapChunk.getTopPointer(chunk));

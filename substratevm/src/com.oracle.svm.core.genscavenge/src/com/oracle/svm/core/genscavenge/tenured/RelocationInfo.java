@@ -17,12 +17,12 @@ import org.graalvm.word.WordFactory;
  * +-------------------------+---------------+-----------------------+
  * | relocation pointer (8B) | gap size (4B) | next plug offset (4B) |
  * +-------------------------+---------------+-----------------------+
- *                                                                   ^p
+ *                                                                   ^pointer
  * 32-bit mode:
  * +-------------------------+---------------+-----------------------+
  * | relocation pointer (4B) | gap size (2B) | next plug offset (2B) |
  * +-------------------------+---------------+-----------------------+
- *                                                                   ^p
+ *                                                                   ^pointer
  * </pre>
  */
 public class RelocationInfo {
@@ -101,7 +101,7 @@ public class RelocationInfo {
     public static void walkObjects(AlignedHeapChunk.AlignedHeader chunkHeader, ObjectVisitor visitor) {
         Pointer cursor = AlignedHeapChunk.getObjectsStart(chunkHeader);
         Pointer top = HeapChunk.getTopPointer(chunkHeader); // top cannot move in this case
-        Pointer relocationInfo = chunkHeader.getFirstRelocationInfo();
+        Pointer relocationInfo = AlignedHeapChunk.getObjectsStart(chunkHeader);
 
         while (cursor.belowThan(top)) {
 
@@ -134,17 +134,13 @@ public class RelocationInfo {
     public static Pointer getRelocatedObjectPointer(Pointer p) {
         assert ObjectHeaderImpl.isAlignedObject(p.toObject()) : "Unaligned objects are not supported!";
 
-        AlignedHeapChunk.AlignedHeader aChunk = AlignedHeapChunk.getEnclosingChunkFromObjectPointer(p);
+        AlignedHeapChunk.AlignedHeader chunk = AlignedHeapChunk.getEnclosingChunkFromObjectPointer(p);
 
-        if (HeapChunk.getTopPointer(aChunk).belowOrEqual(p)) {
+        if (HeapChunk.getTopPointer(chunk).belowOrEqual(p)) {
             return WordFactory.nullPointer(); // object didn't survive
         }
 
-        Pointer relocationInfo = aChunk.getFirstRelocationInfo();
-        if (relocationInfo.isNull() || p.belowThan(relocationInfo)) {
-            return p; // not relocated
-        }
-
+        Pointer relocationInfo = AlignedHeapChunk.getObjectsStart(chunk);
         Pointer nextRelocationInfo = RelocationInfo.getNextRelocationInfo(relocationInfo);
         while (nextRelocationInfo.isNonNull() && nextRelocationInfo.belowOrEqual(p)) {
             relocationInfo = nextRelocationInfo;
@@ -161,5 +157,9 @@ public class RelocationInfo {
         Pointer relocationOffset = p.subtract(relocationInfo);
 
         return relocationPointer.add(relocationOffset);
+    }
+
+    public static int getSize() {
+        return 16; // TODO
     }
 }

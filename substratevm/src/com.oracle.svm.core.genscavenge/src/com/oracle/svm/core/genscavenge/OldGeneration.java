@@ -28,6 +28,7 @@ import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.EXTREMEL
 import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.probability;
 
 import com.oracle.svm.core.code.RuntimeCodeInfoMemory;
+import com.oracle.svm.core.genscavenge.remset.AlignedChunkRememberedSet;
 import com.oracle.svm.core.genscavenge.tenured.AllObjectsMarkingVisitor;
 import com.oracle.svm.core.genscavenge.tenured.CompactingVisitor;
 import com.oracle.svm.core.genscavenge.tenured.FixingVisitor;
@@ -130,6 +131,7 @@ public final class OldGeneration extends Generation {
 
     void planning() {
         // Phase 1: Compute and write relocation info
+        planningVisitor.init(space);
         space.walkAlignedHeapChunks(planningVisitor);
     }
 
@@ -141,7 +143,6 @@ public final class OldGeneration extends Generation {
             Log.log().string("[OldGeneration.fixing: fixing phase, chunk=").zhex(aChunk)
                     .string(", top=").zhex(HeapChunk.getTopPointer(aChunk))
                     .string("]").newline().flush();
-            fixingVisitor.setChunk(aChunk);
             RelocationInfo.walkObjects(aChunk, fixingVisitor);
             aChunk = HeapChunk.getNext(aChunk);
         }
@@ -182,42 +183,38 @@ public final class OldGeneration extends Generation {
 
     void compacting(Timers timers) {
         // Phase 3: Copy objects to their new location
+        timers.tenuredCompactingCunks.open();
         AlignedHeapChunk.AlignedHeader chunk = space.getFirstAlignedHeapChunk();
         while (chunk.isNonNull()) {
-            Log trace = Log.noopLog().string("[OldGeneration.compacting: chunk=").zhex(chunk);
+            Log.log().string("[OldGeneration.compacting: chunk=").zhex(chunk)
+                    .string("]\n").flush();
 
-            if (chunk.getFirstRelocationInfo().isNull()) {
-                /*
-                 * No compaction necessary as there are no gaps.
-                 */
-                trace.string(", skip");
-            } else if (false /* TODO */) {
-                /*
-                 * Skip compaction as fragmentation isn't severe enough.
-                 */
-                trace.string(", skip");
-            } else {
-                trace.string(", firstRelocationInfo=").zhex(chunk.getFirstRelocationInfo());
-                trace.string(", oldTop=").zhex(HeapChunk.getTopPointer(chunk));
+            RememberedSet.get().clearRememberedSet(chunk);
 
-                timers.tenuredCompactingCunks.open();
-                compactingVisitor.init(chunk);
-                RelocationInfo.walkObjects(chunk, compactingVisitor);
-                compactingVisitor.finish();
-                timers.tenuredCompactingCunks.close();
-
-                timers.tenuredUpdatingRememberedSet.open();
-                RememberedSet.get().clearRememberedSet(chunk);
-                RememberedSet.get().enableRememberedSetForChunk(chunk); // update FirstObjectTable
-                timers.tenuredUpdatingRememberedSet.close();
-
-                trace.string(", newTop=").zhex(HeapChunk.getTopPointer(chunk));
-            }
-
-            trace.string("]").newline().flush();
+            compactingVisitor.init(chunk);
+            RelocationInfo.walkObjects(chunk, compactingVisitor);
+            compactingVisitor.finish();
 
             chunk = HeapChunk.getNext(chunk);
         }
+        timers.tenuredCompactingCunks.close();
+
+        /*
+        chunk = space.getFirstAlignedHeapChunk();
+        timers.tenuredUpdatingRememberedSet.open();
+        while (chunk.isNonNull()) {
+            Log.log().string("[OldGeneration.compacting: chunk=").zhex(chunk)
+                    .string(", top=").zhex(HeapChunk.getTopPointer(chunk))
+                    .string(", done]\n").flush();
+
+            RememberedSet.get().clearRememberedSet(chunk);
+            RememberedSet.get().enableRememberedSetForChunk(chunk); // update FirstObjectTable
+
+            chunk = HeapChunk.getNext(chunk);
+        }
+        timers.tenuredUpdatingRememberedSet.close();
+        */
+        RememberedSet.get().verify(space.getFirstAlignedHeapChunk());
     }
 
     void releaseSpaces(ChunkReleaser chunkReleaser) {
