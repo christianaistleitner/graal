@@ -1,6 +1,5 @@
 package com.oracle.svm.core.genscavenge.tenured;
 
-import org.graalvm.compiler.word.Word;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
 import org.graalvm.word.Pointer;
@@ -9,15 +8,11 @@ import org.graalvm.word.WordFactory;
 
 import com.oracle.svm.core.AlwaysInline;
 import com.oracle.svm.core.NeverInline;
-import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
 import com.oracle.svm.core.genscavenge.HeapChunk;
 import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
 import com.oracle.svm.core.hub.LayoutEncoding;
 import com.oracle.svm.core.log.Log;
-
-import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.SLOW_PATH_PROBABILITY;
-import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.probability;
 
 public class PlanningVisitor implements AlignedHeapChunk.Visitor {
 
@@ -45,6 +40,14 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
 
         while (cursor.belowThan(top)) {
             Object obj = cursor.toObject();
+
+            /*
+             * Adding the optional identity hash field will increase the object's size,
+             * but in here, when compacting the tenured space, we expect that there aren't any marked objects
+             * which have their "IdentityHashFromAddress" object header flag set.
+             *
+             * TODO: Add assertion.
+             */
             UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj);
 
             if (ObjectHeaderImpl.hasMarkedBit(obj)) {
@@ -85,16 +88,6 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
                             .newline().flush();
 
                     gapSize = WordFactory.zero();
-                }
-
-                /*
-                 * Adding the optional identity hash field will increase the object's size.
-                 */
-                if (!ConfigurationValues.getObjectLayout().hasFixedIdentityHashField()) {
-                    Word header = ObjectHeaderImpl.readHeaderFromObject(obj);
-                    if (probability(SLOW_PATH_PROBABILITY, ObjectHeaderImpl.hasIdentityHashFromAddressInline(header))) {
-                        objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj, true);
-                    }
                 }
 
                 relocationPointer = relocationPointer.add(objSize);
