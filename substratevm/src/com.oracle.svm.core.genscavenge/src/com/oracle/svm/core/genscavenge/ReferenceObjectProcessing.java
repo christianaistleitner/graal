@@ -213,7 +213,9 @@ final class ReferenceObjectProcessing {
         assert refPointer.isNonNull() : "Referent is null: should not have been discovered";
         assert !HeapImpl.getHeapImpl().isInImageHeap(refPointer) : "Image heap referent: should not have been discovered";
         Object refObject = refPointer.toObject();
-        if (isInOldSpace(refObject)) {
+
+        // TODO: Update the Reference<?>'s referent field during the normal fixing phase.
+        if (GCImpl.getGCImpl().isCompleteCollection() && isInOldSpace(refObject)) {
             Object relocatedObject = RelocationInfo.getRelocatedObject(refPointer);
             ReferenceInternals.setReferent(dr, relocatedObject);
             Log.log().string("Updated Reference (relocated), dr=").object(dr)
@@ -222,6 +224,7 @@ final class ReferenceObjectProcessing {
                     .newline().flush();
             return relocatedObject != null;
         }
+
         if (maybeUpdateForwardedReference(dr, refPointer)) {
             return true;
         }
