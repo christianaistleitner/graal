@@ -11,10 +11,15 @@ import com.oracle.svm.core.NeverInline;
 import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
 import com.oracle.svm.core.genscavenge.HeapChunk;
 import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
+import com.oracle.svm.core.genscavenge.Space;
 import com.oracle.svm.core.hub.LayoutEncoding;
 import com.oracle.svm.core.log.Log;
 
 public class PlanningVisitor implements AlignedHeapChunk.Visitor {
+
+    private AlignedHeapChunk.AlignedHeader chunk;
+
+    private Pointer allocationPointer;
 
     @Platforms(Platform.HOSTED_ONLY.class)
     public PlanningVisitor() {
@@ -34,9 +39,23 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
         Pointer cursor = AlignedHeapChunk.getObjectsStart(chunk);
         Pointer top = HeapChunk.getTopPointer(chunk); // top can't move here, therefore it's fine to read once
 
-        Pointer relocationInfoPointer = WordFactory.nullPointer();
-        Pointer relocationPointer = AlignedHeapChunk.getObjectsStart(chunk);
+        Pointer relocationInfoPointer = AlignedHeapChunk.getObjectsStart(chunk);
         UnsignedWord gapSize =  WordFactory.zero();
+        UnsignedWord plugSize =  WordFactory.zero();
+
+        /*
+         * Write the first relocation info just before objects start.
+         */
+        RelocationInfo.writeRelocationPointer(relocationInfoPointer, allocationPointer);
+        RelocationInfo.writeGapSize(relocationInfoPointer, 0);
+        RelocationInfo.writeNextPlugOffset(relocationInfoPointer, 0);
+
+        Log.log().string("Wrote first relocation info at ").zhex(relocationInfoPointer)
+                .string(": relocationPointer=").zhex(allocationPointer)
+                .string(": gapSize=").unsigned(0)
+                .string(": nextPlugOffset=").zhex(0)
+                .newline().flush();
+
 
         while (cursor.belowThan(top)) {
             Object obj = cursor.toObject();
@@ -54,7 +73,7 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
                 ObjectHeaderImpl.clearMarkedBit(obj);
 
                 if (gapSize.notEqual(0)) {
-                    Log.noopLog().string("Gap from ").zhex(cursor.subtract(gapSize))
+                    Log.log().string("Gap from ").zhex(cursor.subtract(gapSize))
                             .string(" to ").zhex(cursor)
                             .string(" (").unsigned(gapSize).string(" bytes)")
                             .newline().flush();
@@ -62,27 +81,21 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
                     /*
                      * Update previous relocation info or set the chunk's "FirstRelocationInfo" pointer.
                      */
-                    if (relocationInfoPointer.isNull()) {
-                        chunk.setFirstRelocationInfo(cursor);
-                    } else {
-                        int offset = (int) cursor.subtract(relocationInfoPointer).rawValue();
-                        RelocationInfo.writeNextPlugOffset(relocationInfoPointer, offset);
+                    int offset = (int) cursor.subtract(relocationInfoPointer).rawValue();
+                    RelocationInfo.writeNextPlugOffset(relocationInfoPointer, offset);
 
-                        Log.noopLog().string("Updated relocation info at ").zhex(relocationInfoPointer)
-                                .string(": nextPlugOffset=").zhex(offset)
-                                .newline().flush();
-                    }
+                    Log.log().string("Updated relocation info at ").zhex(relocationInfoPointer)
+                            .string(": nextPlugOffset=").zhex(offset)
+                            .newline().flush();
 
                     /*
                      * Write the current relocation info at the gap end.
                      */
                     relocationInfoPointer = cursor;
-                    RelocationInfo.writeRelocationPointer(relocationInfoPointer, relocationPointer);
                     RelocationInfo.writeGapSize(relocationInfoPointer, (int) gapSize.rawValue());
                     RelocationInfo.writeNextPlugOffset(relocationInfoPointer, 0);
 
-                    Log.noopLog().string("Wrote relocation info at ").zhex(relocationInfoPointer)
-                            .string(": relocationPointer=").zhex(relocationPointer)
+                    Log.log().string("Wrote relocation info at ").zhex(relocationInfoPointer)
                             .string(": gapSize=").unsigned(gapSize)
                             .string(": nextPlugOffset=").zhex(0)
                             .newline().flush();
@@ -90,8 +103,29 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
                     gapSize = WordFactory.zero();
                 }
 
-                relocationPointer = relocationPointer.add(objSize);
+                plugSize = plugSize.add(objSize);
             } else {
+                if (plugSize.notEqual(0)) {
+                    /*
+                     * Update previous relocation info to set its relocation pointer.
+                     */
+                    Pointer relocationPointer = getRelocationPointer(plugSize);
+                    RelocationInfo.writeRelocationPointer(relocationInfoPointer, relocationPointer);
+
+                    Log.log().string("Updated relocation info at ").zhex(relocationInfoPointer)
+                            .string(": relocationPointer=").zhex(relocationPointer)
+                            .newline().flush();
+
+                    Log.log().string("Plug from ").zhex(relocationInfoPointer)
+                            .string(" to ").zhex(relocationInfoPointer.add(plugSize))
+                            .string(" (").unsigned(plugSize).string(" bytes)")
+                            .string(" will be moved to ").zhex(relocationPointer)
+                            .character('-').zhex(relocationPointer.add(plugSize))
+                            .newline().flush();
+
+                    plugSize = WordFactory.zero();
+                }
+
                 gapSize = gapSize.add(objSize);
             }
 
@@ -99,12 +133,17 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
         }
 
         /*
+         * Sanity check
+         */
+        assert gapSize.equal(0) || plugSize.equal(0);
+
+        /*
          * Check for a gap at chunk end that requires updating the chunk top offset to clear that memory.
          */
         if (gapSize.notEqual(0)) {
             Pointer topPointer = HeapChunk.getTopPointer(chunk);
             Pointer gapStart = topPointer.subtract(gapSize);
-            Log.noopLog().string("Gap at chunk end from ").zhex(gapStart)
+            Log.log().string("Gap at chunk end from ").zhex(gapStart)
                     .string(" to ").zhex(topPointer)
                     .string(" (").unsigned(gapSize).string(" bytes)")
                     .newline().flush();
@@ -112,6 +151,41 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
             chunk.setTopOffset(chunk.getTopOffset().subtract(gapSize));
         }
 
+        if (plugSize.notEqual(0)) {
+            Pointer relocationPointer = getRelocationPointer(plugSize);
+            RelocationInfo.writeRelocationPointer(relocationInfoPointer, relocationPointer);
+
+            Pointer topPointer = HeapChunk.getTopPointer(chunk);
+            Pointer plugStart = topPointer.subtract(plugSize);
+            Log.log().string("Plug at chunk end from ").zhex(plugStart)
+                    .string(" to ").zhex(topPointer)
+                    .string(" (").unsigned(plugSize).string(" bytes)")
+                    .newline().flush();
+
+            Log.log().string("Plug from ").zhex(relocationInfoPointer)
+                    .string(" to ").zhex(relocationInfoPointer.add(plugSize))
+                    .string(" (").unsigned(plugSize).string(" bytes)")
+                    .string(" will be moved to ").zhex(relocationPointer)
+                    .character('-').zhex(relocationPointer.add(plugSize))
+                    .newline().flush();
+        }
+
         return true;
+    }
+
+    private Pointer getRelocationPointer(UnsignedWord size) {
+        Pointer relocationPointer = allocationPointer;
+        allocationPointer = allocationPointer.add(size);
+        if (AlignedHeapChunk.getObjectsEnd(chunk).belowThan(allocationPointer)) {
+            chunk = HeapChunk.getNext(chunk);
+            relocationPointer = AlignedHeapChunk.getObjectsStart(chunk);
+            allocationPointer = relocationPointer.add(size);
+        }
+        return relocationPointer;
+    }
+
+    public void init(Space space) {
+        chunk = space.getFirstAlignedHeapChunk();
+        allocationPointer = AlignedHeapChunk.getObjectsStart(chunk);
     }
 }

@@ -1,24 +1,18 @@
 package com.oracle.svm.core.genscavenge.tenured;
 
-import com.oracle.svm.core.UnmanagedMemoryUtil;
-import com.oracle.svm.core.config.ConfigurationValues;
-import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
-import com.oracle.svm.core.genscavenge.HeapChunk;
-import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
-import com.oracle.svm.core.heap.ObjectVisitor;
-import com.oracle.svm.core.hub.LayoutEncoding;
-import com.oracle.svm.core.identityhashcode.IdentityHashCodeSupport;
-import com.oracle.svm.core.log.Log;
-import com.oracle.svm.core.thread.VMOperation;
-import org.graalvm.compiler.word.ObjectAccess;
 import org.graalvm.compiler.word.Word;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
 import org.graalvm.word.WordFactory;
 
-import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.SLOW_PATH_PROBABILITY;
-import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.VERY_SLOW_PATH_PROBABILITY;
-import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.probability;
+import com.oracle.svm.core.UnmanagedMemoryUtil;
+import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
+import com.oracle.svm.core.genscavenge.HeapChunk;
+import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
+import com.oracle.svm.core.heap.ObjectVisitor;
+import com.oracle.svm.core.hub.LayoutEncoding;
+import com.oracle.svm.core.log.Log;
+import com.oracle.svm.core.thread.VMOperation;
 
 public class CompactingVisitor implements ObjectVisitor {
 
@@ -35,9 +29,6 @@ public class CompactingVisitor implements ObjectVisitor {
         }
 
         Pointer objPointer = Word.objectToUntrackedPointer(obj);
-        if (objPointer.belowThan(relocationInfoPointer)) {
-            return true;
-        }
 
         if (nextRelocationInfoPointer.isNonNull() && objPointer.aboveOrEqual(nextRelocationInfoPointer)) {
             relocationInfoPointer = nextRelocationInfoPointer;
@@ -56,27 +47,36 @@ public class CompactingVisitor implements ObjectVisitor {
 
         UnsignedWord copySize = copyObject(obj, newLocation);
 
-        HeapChunk.setTopPointer(chunk, newLocation.add(copySize));
+        // TODO: Find a more elegant way to set the top pointer during/after compaction.
+        AlignedHeapChunk.AlignedHeader newChunk = AlignedHeapChunk.getEnclosingChunkFromObjectPointer(newLocation);
+        HeapChunk.setTopPointer(
+                newChunk,
+                newLocation.add(copySize)
+        );
+        if (chunk.notEqual(newChunk)) {
+            HeapChunk.setTopPointer(
+                    chunk,
+                    AlignedHeapChunk.getObjectsStart(chunk)
+            );
+        }
 
         return true;
     }
 
     public void init(AlignedHeapChunk.AlignedHeader chunk) {
         this.chunk = chunk;
-        relocationInfoPointer = chunk.getFirstRelocationInfo();
-        nextRelocationInfoPointer = WordFactory.nullPointer();
-        relocationPointer = WordFactory.nullPointer();
-        if (relocationInfoPointer.isNonNull()) {
-            int offset = RelocationInfo.readNextPlugOffset(relocationInfoPointer);
-            if (offset > 0) {
-                nextRelocationInfoPointer = relocationInfoPointer.add(offset);
-            }
-            relocationPointer = RelocationInfo.readRelocationPointer(relocationInfoPointer);
+        relocationInfoPointer = AlignedHeapChunk.getObjectsStart(chunk);
+        relocationPointer = RelocationInfo.readRelocationPointer(relocationInfoPointer);
+
+        int offset = RelocationInfo.readNextPlugOffset(relocationInfoPointer);
+        if (offset > 0) {
+            nextRelocationInfoPointer = relocationInfoPointer.add(offset);
+        } else {
+            nextRelocationInfoPointer = WordFactory.nullPointer();
         }
     }
 
     public void finish() {
-        chunk.setFirstRelocationInfo(null);
     }
 
     private UnsignedWord copyObject(Object obj, Pointer dest) {
