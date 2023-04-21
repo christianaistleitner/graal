@@ -38,6 +38,7 @@ import com.oracle.svm.core.MemoryWalker;
 import com.oracle.svm.core.Uninterruptible;
 import com.oracle.svm.core.feature.AutomaticallyRegisteredImageSingleton;
 import com.oracle.svm.core.genscavenge.remset.RememberedSet;
+import com.oracle.svm.core.genscavenge.tenured.RelocationInfo;
 import com.oracle.svm.core.heap.ObjectVisitor;
 import com.oracle.svm.core.heap.RestrictHeapAccess;
 import com.oracle.svm.core.os.CommittedMemoryProvider;
@@ -86,15 +87,6 @@ public final class AlignedHeapChunk {
      */
     @RawStructure
     public interface AlignedHeader extends HeapChunk.Header<AlignedHeader> {
-
-        /**
-         * @return A pointer to the end of the first relocation info, or a {@code null} pointer if no gap exists.
-         */
-        @RawField
-        Pointer getFirstRelocationInfo();
-
-        @RawField
-        void setFirstRelocationInfo(Pointer p);
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
@@ -166,7 +158,7 @@ public final class AlignedHeapChunk {
 
     @Fold
     public static UnsignedWord getObjectsStartOffset() {
-        return RememberedSet.get().getHeaderSizeOfAlignedChunk();
+        return RememberedSet.get().getHeaderSizeOfAlignedChunk().add(RelocationInfo.getSize());
     }
 
     @Fold
