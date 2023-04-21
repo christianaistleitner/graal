@@ -1067,6 +1067,7 @@ public final class GCImpl implements GC {
             // Mark objects in the old generation and continue depth-first traversal
             // as referenced objects aren't colored gray by copying!
             ObjectHeaderImpl.setMarkedBit(original);
+            // TODO: This recursive call will cause stack overflows. The Deutsch-Schorr-Waite algorithm would fix that.
             greyToBlackObjectVisitor.visitObject(original);
             return original; // Objects in the old generation cannot be promoted further.
         }
