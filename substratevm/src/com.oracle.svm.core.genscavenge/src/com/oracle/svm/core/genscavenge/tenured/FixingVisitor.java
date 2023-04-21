@@ -44,8 +44,4 @@ public class FixingVisitor implements ObjectVisitor {
         InteriorObjRefWalker.walkObjectInline(obj, refFixingVisitor);
         return true;
     }
-
-    public void setChunk(AlignedHeapChunk.AlignedHeader chunk) {
-        refFixingVisitor.setChunk(chunk);
-    }
 }
