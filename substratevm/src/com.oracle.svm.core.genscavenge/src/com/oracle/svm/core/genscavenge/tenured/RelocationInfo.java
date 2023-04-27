@@ -6,6 +6,8 @@ import com.oracle.svm.core.genscavenge.HeapChunk;
 import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
 import com.oracle.svm.core.heap.ObjectVisitor;
 import com.oracle.svm.core.hub.LayoutEncoding;
+import com.oracle.svm.core.log.Log;
+
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
 import org.graalvm.word.WordFactory;
@@ -136,7 +138,9 @@ public class RelocationInfo {
 
         AlignedHeapChunk.AlignedHeader chunk = AlignedHeapChunk.getEnclosingChunkFromObjectPointer(p);
 
-        if (HeapChunk.getTopPointer(chunk).belowOrEqual(p)) {
+        Pointer topPointer = HeapChunk.getTopPointer(chunk);
+        if (p.aboveOrEqual(topPointer)) {
+            Log.log().string("Object is above top pointer, ").object(p.toObject()).newline().flush();
             return WordFactory.nullPointer(); // object didn't survive
         }
 
@@ -148,6 +152,7 @@ public class RelocationInfo {
         }
 
         if (nextRelocationInfo.isNonNull() && nextRelocationInfo.subtract(RelocationInfo.readGapSize(nextRelocationInfo)).belowOrEqual(p)) {
+            Log.log().string("Object is within a gap, ").object(p.toObject()).newline().flush();
             return WordFactory.nullPointer(); // object didn't survive
         }
 

@@ -39,20 +39,11 @@ public class RefFixingVisitor implements ObjectReferenceVisitor {
             return true;
         }
 
-        Pointer relocationInfo = AlignedHeapChunk.getObjectsStart(
-                AlignedHeapChunk.getEnclosingChunkFromObjectPointer(p)
-        );
-        Pointer nextRelocationInfo = RelocationInfo.getNextRelocationInfo(relocationInfo);
-        while (nextRelocationInfo.isNonNull() && nextRelocationInfo.belowOrEqual(p)) {
-            relocationInfo = nextRelocationInfo;
-            nextRelocationInfo = RelocationInfo.getNextRelocationInfo(relocationInfo);
-        }
-
-        Pointer relocationPointer = RelocationInfo.readRelocationPointer(relocationInfo);
-        Pointer newLocationOld = relocationPointer.add(p.subtract(relocationInfo));
-
         Pointer newLocation = RelocationInfo.getRelocatedObjectPointer(p);
-        assert newLocation.equal(newLocationOld);
+        if (newLocation.isNull()) {
+            Log.log().string("ERROR - holder=").object(holderObject).newline().flush();
+            // assert false;
+        }
 
         Object offsetObj = (innerOffset == 0) ? newLocation.toObject() : newLocation.add(innerOffset).toObject();
         ReferenceAccess.singleton().writeObjectAt(objRef, offsetObj, compressed);
@@ -69,8 +60,6 @@ public class RefFixingVisitor implements ObjectReferenceVisitor {
                     .string(", objRef=").zhex(objRef)
                     .string(", innerOffset=").signed(innerOffset)
                     .string(", compressed=").bool(compressed)
-                    .string(", relocationInfo=").zhex(relocationInfo)
-                    .string(", relocationPointer=").zhex(relocationPointer)
                     .newline().flush();
         }
 

@@ -92,7 +92,6 @@ public final class AlignedChunkRememberedSet {
         Pointer objectsStart = AlignedHeapChunk.getObjectsStart(chunk);
         Pointer startOffset = Word.objectToUntrackedPointer(obj).subtract(objectsStart);
         Pointer endOffset = LayoutEncoding.getObjectEndInGC(obj).subtract(objectsStart);
-        Log.log().string("RS, start=").zhex(startOffset).string(", end=").zhex(endOffset).newline().flush();
         FirstObjectTable.setTableForObject(fotStart, startOffset, endOffset);
         ObjectHeaderImpl.setRememberedSetBit(obj);
     }
@@ -198,7 +197,6 @@ public final class AlignedChunkRememberedSet {
     }
 
     public static boolean verify(AlignedHeader chunk) {
-        Log.log().string("[AlignedChunkRememberedSet.verify: chunk=").zhex(chunk).string("]\n").flush();
         boolean success = true;
         success &= CardTable.verify(getCardTableStart(chunk), AlignedHeapChunk.getObjectsStart(chunk), HeapChunk.getTopPointer(chunk));
         success &= FirstObjectTable.verify(getFirstObjectTableStart(chunk), AlignedHeapChunk.getObjectsStart(chunk), HeapChunk.getTopPointer(chunk));

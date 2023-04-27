@@ -116,6 +116,13 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
                             .string(": relocationPointer=").zhex(relocationPointer)
                             .newline().flush();
 
+                    Log.log().string("Plug from ").zhex(relocationInfoPointer)
+                            .string(" to ").zhex(relocationInfoPointer.add(plugSize))
+                            .string(" (").unsigned(plugSize).string(" bytes)")
+                            .string(" will be moved to ").zhex(relocationPointer)
+                            .character('-').zhex(relocationPointer.add(plugSize))
+                            .newline().flush();
+
                     plugSize = WordFactory.zero();
                 }
 
@@ -148,6 +155,13 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
             Log.log().string("Plug at chunk end from ").zhex(plugStart)
                     .string(" to ").zhex(topPointer)
                     .string(" (").unsigned(plugSize).string(" bytes)")
+                    .newline().flush();
+
+            Log.log().string("Plug from ").zhex(relocationInfoPointer)
+                    .string(" to ").zhex(relocationInfoPointer.add(plugSize))
+                    .string(" (").unsigned(plugSize).string(" bytes)")
+                    .string(" will be moved to ").zhex(relocationPointer)
+                    .character('-').zhex(relocationPointer.add(plugSize))
                     .newline().flush();
         }
 

@@ -36,9 +36,6 @@ public class CompactingVisitor implements ObjectVisitor {
         }
 
         Pointer objPointer = Word.objectToUntrackedPointer(obj);
-        if (objPointer.belowThan(relocationInfoPointer)) {
-            return true;
-        }
 
         if (nextRelocationInfoPointer.isNonNull() && objPointer.aboveOrEqual(nextRelocationInfoPointer)) {
             relocationInfoPointer = nextRelocationInfoPointer;
@@ -46,7 +43,8 @@ public class CompactingVisitor implements ObjectVisitor {
             relocationPointer = RelocationInfo.readRelocationPointer(relocationInfoPointer);
         }
 
-        Pointer newLocation = objPointer.subtract(relocationInfoPointer).add(relocationPointer);
+        Pointer innerPlugOffset = objPointer.subtract(relocationInfoPointer);
+        Pointer newLocation = relocationPointer.add(innerPlugOffset);
 
         Log.noopLog().string("New relocation")
                 .string(", newLocation=").zhex(newLocation)
@@ -70,22 +68,19 @@ public class CompactingVisitor implements ObjectVisitor {
             );
         }
 
-        RememberedSet.get().enableRememberedSetForObject(newChunk, newLocation.toObject());
-
         return true;
     }
 
     public void init(AlignedHeapChunk.AlignedHeader chunk) {
         this.chunk = chunk;
         relocationInfoPointer = AlignedHeapChunk.getObjectsStart(chunk);
-        nextRelocationInfoPointer = WordFactory.nullPointer();
-        relocationPointer = WordFactory.nullPointer();
-        if (relocationInfoPointer.isNonNull()) {
-            int offset = RelocationInfo.readNextPlugOffset(relocationInfoPointer);
-            if (offset > 0) {
-                nextRelocationInfoPointer = relocationInfoPointer.add(offset);
-            }
-            relocationPointer = RelocationInfo.readRelocationPointer(relocationInfoPointer);
+        relocationPointer = RelocationInfo.readRelocationPointer(relocationInfoPointer);
+
+        int offset = RelocationInfo.readNextPlugOffset(relocationInfoPointer);
+        if (offset > 0) {
+            nextRelocationInfoPointer = relocationInfoPointer.add(offset);
+        } else {
+            nextRelocationInfoPointer = WordFactory.nullPointer();
         }
     }
 

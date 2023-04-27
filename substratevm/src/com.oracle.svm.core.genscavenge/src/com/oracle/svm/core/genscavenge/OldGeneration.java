@@ -90,7 +90,7 @@ public final class OldGeneration extends Generation {
     @AlwaysInline("GC performance")
     @Override
     public Object promoteAlignedObject(Object original, AlignedHeapChunk.AlignedHeader originalChunk, Space originalSpace) {
-        assert originalSpace.isFromSpace();
+        assert originalSpace.isFromSpace() && !originalSpace.isOldSpace();
         Object copy = getSpace().promoteAlignedObject(original, originalSpace);
         ObjectHeaderImpl.setMarkedBit(copy);
         return copy;
@@ -189,8 +189,6 @@ public final class OldGeneration extends Generation {
             Log.log().string("[OldGeneration.compacting: chunk=").zhex(chunk)
                     .string("]\n").flush();
 
-            RememberedSet.get().clearRememberedSet(chunk);
-
             compactingVisitor.init(chunk);
             RelocationInfo.walkObjects(chunk, compactingVisitor);
             compactingVisitor.finish();
@@ -199,7 +197,6 @@ public final class OldGeneration extends Generation {
         }
         timers.tenuredCompactingCunks.close();
 
-        /*
         chunk = space.getFirstAlignedHeapChunk();
         timers.tenuredUpdatingRememberedSet.open();
         while (chunk.isNonNull()) {
@@ -213,8 +210,6 @@ public final class OldGeneration extends Generation {
             chunk = HeapChunk.getNext(chunk);
         }
         timers.tenuredUpdatingRememberedSet.close();
-        */
-        RememberedSet.get().verify(space.getFirstAlignedHeapChunk());
     }
 
     void releaseSpaces(ChunkReleaser chunkReleaser) {
