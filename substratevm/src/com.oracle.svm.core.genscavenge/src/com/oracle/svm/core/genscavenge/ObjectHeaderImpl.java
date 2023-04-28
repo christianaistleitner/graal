@@ -65,8 +65,7 @@ import jdk.vm.ci.code.CodeUtil;
 public final class ObjectHeaderImpl extends ObjectHeader {
     private static final UnsignedWord UNALIGNED_BIT = WordFactory.unsigned(0b00001);
     private static final UnsignedWord REMEMBERED_SET_BIT = WordFactory.unsigned(0b00010);
-    private static final UnsignedWord FORWARDED_BIT = WordFactory.unsigned(0b00100);
-    private static final UnsignedWord MARKED_BIT = FORWARDED_BIT; // Reused
+    private static final UnsignedWord MARKED_OR_FORWARDED_BIT = WordFactory.unsigned(0b00100);
 
     /**
      * Optional: per-object identity hash code state to avoid a fixed field, initially implicitly
@@ -391,12 +390,12 @@ public final class ObjectHeaderImpl extends ObjectHeader {
 
     public static void setMarkedBit(Object o) {
         UnsignedWord header = readHeaderFromObject(o);
-        writeHeaderToObject(o, header.or(MARKED_BIT));
+        writeHeaderToObject(o, header.or(MARKED_OR_FORWARDED_BIT));
     }
 
     public static void clearMarkedBit(Object o) {
         UnsignedWord header = readHeaderFromObject(o);
-        writeHeaderToObject(o, header.and(MARKED_BIT.not()));
+        writeHeaderToObject(o, header.and(MARKED_OR_FORWARDED_BIT.not()));
     }
 
     public static boolean hasMarkedBit(Object o) {
@@ -404,7 +403,7 @@ public final class ObjectHeaderImpl extends ObjectHeader {
     }
 
     public static boolean hasMarkedBit(UnsignedWord header) {
-        return header.and(MARKED_BIT).notEqual(0) ;
+        return header.and(MARKED_OR_FORWARDED_BIT).notEqual(0) ;
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
@@ -415,7 +414,7 @@ public final class ObjectHeaderImpl extends ObjectHeader {
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     public static boolean isForwardedHeader(UnsignedWord header) {
-        return header.and(FORWARDED_BIT).notEqual(0) && header.and(REMEMBERED_SET_BIT).equal(0); // TODO: Fine?
+        return header.and(MARKED_OR_FORWARDED_BIT).notEqual(0) && header.and(REMEMBERED_SET_BIT).equal(0); // TODO: Fine?
     }
 
     Object getForwardedObject(Pointer ptr) {
@@ -458,7 +457,7 @@ public final class ObjectHeaderImpl extends ObjectHeader {
             forwardHeader = Word.objectToUntrackedPointer(copy);
         }
         assert getHeaderBitsFromHeader(forwardHeader).equal(0);
-        writeHeaderToObject(original, forwardHeader.or(FORWARDED_BIT));
+        writeHeaderToObject(original, forwardHeader.or(MARKED_OR_FORWARDED_BIT));
         assert isPointerToForwardedObject(Word.objectToUntrackedPointer(original));
     }
 
