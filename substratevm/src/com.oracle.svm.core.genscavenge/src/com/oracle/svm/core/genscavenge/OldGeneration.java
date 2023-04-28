@@ -248,7 +248,7 @@ public final class OldGeneration extends Generation {
     }
 
     /**
-     * @return {@code true} if gray objects still exist
+     * @return {@code true} if grey objects still exist
      */
     boolean scanGreyObjects() {
         if (!toGreyObjectsWalker.haveGreyObjects()) {
