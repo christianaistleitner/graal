@@ -443,10 +443,6 @@ public final class GCImpl implements GC {
         }
     }
 
-    private static void precondition() {
-        // There are currently no preconditions in place.
-    }
-
     private static void postcondition() {
         HeapImpl heap = HeapImpl.getHeapImpl();
         YoungGeneration youngGen = heap.getYoungGeneration();
@@ -1072,8 +1068,8 @@ public final class GCImpl implements GC {
              * Walk To-Space looking for dirty cards, and within those for old-to-young pointers.
              * Promote any referenced young objects.
              */
-            Space oldGenToSpace = HeapImpl.getHeapImpl().getOldGeneration().getSpace();
-            RememberedSet.get().walkDirtyObjects(oldGenToSpace, greyToBlackObjectVisitor, true);
+            Space oldGenSpace = HeapImpl.getHeapImpl().getOldGeneration().getSpace();
+            RememberedSet.get().walkDirtyObjects(oldGenSpace, greyToBlackObjectVisitor, true);
         } finally {
             blackenDirtyCardRootsTimer.close();
         }

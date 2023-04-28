@@ -252,7 +252,7 @@ public final class OldGeneration extends Generation {
     }
 
     /**
-     * @return {@code true} if gray objects still exist
+     * @return {@code true} if grey objects still exist
      */
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     boolean scanGreyObjects() {
