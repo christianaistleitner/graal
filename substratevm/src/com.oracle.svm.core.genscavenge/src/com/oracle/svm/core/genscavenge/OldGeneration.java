@@ -142,7 +142,7 @@ public final class OldGeneration extends Generation {
     }
 
     @NeverInline("Starting a stack walk in the caller frame.")
-    void fixing(Timers timers) {
+    void fixing(ChunkReleaser chunkReleaser, Timers timers) {
         // Phase 2: Fix object references
         timers.tenuredFixingAlignedChunks.open();
         AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
@@ -183,17 +183,29 @@ public final class OldGeneration extends Generation {
             timers.tenuredFixingStack.close();
         }
 
+        /*
+         * Check unaligned objects. Fix its contained references if the object is marked.
+         * Add the chunk to the releaser's list in case the object is not marked and thus won't survive.
+         */
         timers.tenuredFixingUnalignedChunks.open();
-        UnalignedHeapChunk.UnalignedHeader uChunk = space.getFirstUnalignedHeapChunk();
-        while (uChunk.isNonNull()) {
-            Log.log().string("[OldGeneration.fixing: fixing phase, chunk=").zhex(uChunk)
-                    .string(", unaligned]").newline().flush();
-            Pointer objPointer = UnalignedHeapChunk.getObjectStart(uChunk);
-            Object obj = objPointer.toObject();
-            fixingVisitor.visitObject(obj);
-            uChunk = HeapChunk.getNext(uChunk);
+        try {
+            UnalignedHeapChunk.UnalignedHeader uChunk = space.getFirstUnalignedHeapChunk();
+            while (uChunk.isNonNull()) {
+                Pointer objPointer = UnalignedHeapChunk.getObjectStart(uChunk);
+                Object obj = objPointer.toObject();
+                if (ObjectHeaderImpl.hasMarkedBit(obj)) {
+                    ObjectHeaderImpl.clearMarkedBit(obj);
+                    RememberedSet.get().clearRememberedSet(uChunk);
+                    fixingVisitor.visitObject(obj);
+                } else {
+                    space.extractUnalignedHeapChunk(uChunk);
+                    chunkReleaser.add(uChunk);
+                }
+                uChunk = HeapChunk.getNext(uChunk);
+            }
+        } finally {
+            timers.tenuredFixingUnalignedChunks.close();
         }
-        timers.tenuredFixingUnalignedChunks.close();
     }
 
     void compacting(Timers timers) {
@@ -229,24 +241,6 @@ public final class OldGeneration extends Generation {
     }
 
     void releaseSpaces(ChunkReleaser chunkReleaser) {
-
-        // Release unmarked unaligned chunks.
-        UnalignedHeapChunk.UnalignedHeader uChunk = space.getFirstUnalignedHeapChunk();
-        while (uChunk.isNonNull()) {
-            Pointer objPointer = UnalignedHeapChunk.getObjectStart(uChunk);
-            Object obj = objPointer.toObject();
-            if (ObjectHeaderImpl.hasMarkedBit(obj)) {
-                // Clear and keep chunk.
-                ObjectHeaderImpl.clearMarkedBit(obj);
-                RememberedSet.get().clearRememberedSet(uChunk);
-            } else {
-                // Release the enclosing unaligned chunk.
-                space.extractUnalignedHeapChunk(uChunk);
-                chunkReleaser.add(uChunk);
-            }
-            uChunk = HeapChunk.getNext(uChunk);
-        }
-
         // Release empty aligned chunks.
         AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
         while (aChunk.isNonNull()) {

@@ -565,7 +565,7 @@ public final class GCImpl implements GC {
                 try {
                     startTicks = JfrGCEvents.startGCPhasePause();
                     try {
-                        HeapImpl.getHeapImpl().getOldGeneration().fixing(timers);
+                        HeapImpl.getHeapImpl().getOldGeneration().fixing(chunkReleaser, timers);
                     } finally {
                         JfrGCEvents.emitGCPhasePauseEvent(getCollectionEpoch(), "Tenured Fixing", startTicks);
                     }
