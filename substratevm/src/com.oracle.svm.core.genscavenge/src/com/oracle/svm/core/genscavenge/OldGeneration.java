@@ -26,11 +26,14 @@ package com.oracle.svm.core.genscavenge;
 
 import static com.oracle.svm.core.snippets.KnownIntrinsics.readCallerStackPointer;
 import static com.oracle.svm.core.snippets.KnownIntrinsics.readReturnAddress;
+import static com.oracle.svm.core.snippets.KnownIntrinsics.readCallerStackPointer;
+import static com.oracle.svm.core.snippets.KnownIntrinsics.readReturnAddress;
 import static jdk.compiler.graal.nodes.extended.BranchProbabilityNode.EXTREMELY_SLOW_PATH_PROBABILITY;
 import static jdk.compiler.graal.nodes.extended.BranchProbabilityNode.SLOW_PATH_PROBABILITY;
 import static jdk.compiler.graal.nodes.extended.BranchProbabilityNode.VERY_SLOW_PATH_PROBABILITY;
 import static jdk.compiler.graal.nodes.extended.BranchProbabilityNode.probability;
 
+import com.oracle.svm.core.NeverInline;
 import com.oracle.svm.core.code.RuntimeCodeInfoMemory;
 import com.oracle.svm.core.genscavenge.tenured.AllObjectsMarkingVisitor;
 import com.oracle.svm.core.genscavenge.tenured.CompactingVisitor;
@@ -41,6 +44,7 @@ import com.oracle.svm.core.genscavenge.tenured.RelocationInfo;
 import com.oracle.svm.core.graal.RuntimeCompilation;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
+import org.graalvm.nativeimage.c.function.CodePointer;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
 
@@ -141,6 +145,7 @@ public final class OldGeneration extends Generation {
         space.walkAlignedHeapChunks(planningVisitor);
     }
 
+    @NeverInline("Starting a stack walk in the caller frame.")
     void fixing(Timers timers) {
         // Phase 2: Fix object references
         timers.tenuredFixingAlignedChunks.open();
@@ -170,9 +175,17 @@ public final class OldGeneration extends Generation {
         refFixingVisitor.debug = false;
         timers.tenuredFixingRuntimeCodeCache.close();
 
+        /*
+         * Fix object references located on the stack.
+         */
         timers.tenuredFixingStack.open();
-        GCImpl.getGCImpl().blackenStackRoots(refFixingVisitor);
-        timers.tenuredFixingStack.close();
+        try {
+            Pointer sp = readCallerStackPointer();
+            CodePointer ip = readReturnAddress();
+            GCImpl.walkStackRoots(refFixingVisitor, sp, ip);
+        } finally {
+            timers.tenuredFixingStack.close();
+        }
 
         timers.tenuredFixingUnalignedChunks.open();
         UnalignedHeapChunk.UnalignedHeader uChunk = space.getFirstUnalignedHeapChunk();
