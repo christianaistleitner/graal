@@ -645,7 +645,7 @@ public final class GCImpl implements GC {
                  * Stack references are grey at the beginning of a collection, so I need to blacken
                  * them.
                  */
-                blackenStackRoots(greyToBlackObjRefVisitor);
+                blackenStackRoots();
 
                 /* Custom memory regions which contain object references. */
                 walkThreadLocals();
@@ -729,7 +729,7 @@ public final class GCImpl implements GC {
                  * Stack references are grey at the beginning of a collection, so I need to blacken
                  * them.
                  */
-                blackenStackRoots(greyToBlackObjRefVisitor);
+                blackenStackRoots();
 
                 /* Custom memory regions which contain object references. */
                 walkThreadLocals();
@@ -819,38 +819,44 @@ public final class GCImpl implements GC {
                     "Note that we could start the stack frame also further down the stack, because GC stack frames must not access any objects that are processed by the GC. " +
                     "But we don't store stack frame information for the first frame we would need to process.")
     @Uninterruptible(reason = "Required by called JavaStackWalker methods. We are at a safepoint during GC, so it does not change anything for this method.")
-    void blackenStackRoots(ObjectReferenceVisitor visitor) {
+    private void blackenStackRoots() {
         Timer blackenStackRootsTimer = timers.blackenStackRoots.open();
         try {
             Pointer sp = readCallerStackPointer();
             CodePointer ip = readReturnAddress();
 
-            JavaStackWalk walk = StackValue.get(JavaStackWalk.class);
-            JavaStackWalker.initWalk(walk, sp, ip);
-            walkStack(walk, visitor);
-
-            if (SubstrateOptions.MultiThreaded.getValue()) {
-                /*
-                 * Scan the stacks of all the threads. Other threads will be blocked at a safepoint
-                 * (or in native code) so they will each have a JavaFrameAnchor in their VMThread.
-                 */
-                for (IsolateThread vmThread = VMThreads.firstThread(); vmThread.isNonNull(); vmThread = VMThreads.nextThread(vmThread)) {
-                    if (vmThread == CurrentIsolate.getCurrentThread()) {
-                        /*
-                         * The current thread is already scanned by code above, so we do not have to
-                         * do anything for it here. It might have a JavaFrameAnchor from earlier
-                         * Java-to-C transitions, but certainly not at the top of the stack since it
-                         * is running this code, so just this scan would be incomplete.
-                         */
-                        continue;
-                    }
-                    if (JavaStackWalker.initWalk(walk, vmThread)) {
-                        walkStack(walk, visitor);
-                    }
-                }
-            }
+            walkStackRoots(greyToBlackObjRefVisitor, sp, ip);
         } finally {
             blackenStackRootsTimer.close();
+        }
+    }
+
+    @AlwaysInline("GC performance")
+    @Uninterruptible(reason = "Required by called JavaStackWalker methods. We are at a safepoint during GC, so it does not change anything for this method.", mayBeInlined = true)
+    static void walkStackRoots(ObjectReferenceVisitor visitor, Pointer sp, CodePointer ip) {
+        JavaStackWalk walk = StackValue.get(JavaStackWalk.class);
+        JavaStackWalker.initWalk(walk, sp, ip);
+        walkStack(walk, visitor);
+
+        if (SubstrateOptions.MultiThreaded.getValue()) {
+            /*
+             * Scan the stacks of all the threads. Other threads will be blocked at a safepoint
+             * (or in native code) so they will each have a JavaFrameAnchor in their VMThread.
+             */
+            for (IsolateThread vmThread = VMThreads.firstThread(); vmThread.isNonNull(); vmThread = VMThreads.nextThread(vmThread)) {
+                if (vmThread == CurrentIsolate.getCurrentThread()) {
+                    /*
+                     * The current thread is already scanned by code above, so we do not have to
+                     * do anything for it here. It might have a JavaFrameAnchor from earlier
+                     * Java-to-C transitions, but certainly not at the top of the stack since it
+                     * is running this code, so just this scan would be incomplete.
+                     */
+                    continue;
+                }
+                if (JavaStackWalker.initWalk(walk, vmThread)) {
+                    walkStack(walk, visitor);
+                }
+            }
         }
     }
 
@@ -860,8 +866,9 @@ public final class GCImpl implements GC {
      * {@link SimpleCodeInfoQueryResult} twice per frame, and also ensures that there are no virtual
      * calls to a stack frame visitor.
      */
-    @Uninterruptible(reason = "Required by called JavaStackWalker methods. We are at a safepoint during GC, so it does not change anything for this method.")
-    private void walkStack(JavaStackWalk walk, ObjectReferenceVisitor visitor) {
+    @AlwaysInline("GC performance")
+    @Uninterruptible(reason = "Required by called JavaStackWalker methods. We are at a safepoint during GC, so it does not change anything for this method.", mayBeInlined = true)
+    private static void walkStack(JavaStackWalk walk, ObjectReferenceVisitor visitor) {
         assert VMOperation.isGCInProgress() : "This methods accesses a CodeInfo without a tether";
 
         while (true) {
