@@ -75,7 +75,7 @@ public final class JavaStackWalker {
      * @param startSP the starting SP
      * @param startIP the starting IP
      */
-    @Uninterruptible(reason = "Prevent deoptimization of stack frames while in this method.", callerMustBe = false)
+    @Uninterruptible(reason = "Prevent deoptimization of stack frames while in this method.", callerMustBe = true)
     public static void initWalk(JavaStackWalk walk, Pointer startSP, CodePointer startIP) {
         initWalk(walk, startSP, WordFactory.nullPointer(), startIP, JavaFrameAnchors.getFrameAnchor());
     }
