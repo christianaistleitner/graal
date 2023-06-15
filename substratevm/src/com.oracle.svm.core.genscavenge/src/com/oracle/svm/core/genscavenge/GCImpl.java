@@ -509,6 +509,11 @@ public final class GCImpl implements GC {
         GreyToBlackObjRefVisitor.Counters counters = greyToBlackObjRefVisitor.openCounters();
         long startTicks;
         try {
+            if (!incremental) {
+                HeapImpl heap = HeapImpl.getHeapImpl();
+                heap.getOldGeneration().absorb(heap.getYoungGeneration());
+            }
+
             Timer rootScanTimer = timers.rootScan.open();
             try {
                 startTicks = JfrGCEvents.startGCPhasePause();
@@ -539,19 +544,6 @@ public final class GCImpl implements GC {
                 }
             }
 
-            Timer referenceObjectsTimer = timers.referenceObjects.open();
-            try {
-                startTicks = JfrGCEvents.startGCPhasePause();
-                try {
-                    Reference<?> newlyPendingList = ReferenceObjectProcessing.processRememberedReferences();
-                    HeapImpl.getHeapImpl().addToReferencePendingList(newlyPendingList);
-                } finally {
-                    JfrGCEvents.emitGCPhasePauseEvent(getCollectionEpoch(), "Process Remembered References", startTicks);
-                }
-            } finally {
-                referenceObjectsTimer.close();
-            }
-
             if (!incremental) {
                 Timer tenuredFixingTimer = timers.tenuredFixing.open();
                 try {
@@ -578,6 +570,19 @@ public final class GCImpl implements GC {
                 }
             }
 
+            Timer referenceObjectsTimer = timers.referenceObjects.open();
+            try {
+                startTicks = JfrGCEvents.startGCPhasePause();
+                try {
+                    Reference<?> newlyPendingList = ReferenceObjectProcessing.processRememberedReferences();
+                    HeapImpl.getHeapImpl().addToReferencePendingList(newlyPendingList);
+                } finally {
+                    JfrGCEvents.emitGCPhasePauseEvent(getCollectionEpoch(), "Process Remembered References", startTicks);
+                }
+            } finally {
+                referenceObjectsTimer.close();
+            }
+
             if (RuntimeCompilation.isEnabled()) {
                 Timer cleanCodeCacheTimer = timers.cleanCodeCache.open();
                 try {
@@ -599,7 +604,7 @@ public final class GCImpl implements GC {
 
             Timer releaseSpacesTimer = timers.releaseSpaces.open();
             try {
-                assert chunkReleaser.isEmpty();
+                // assert chunkReleaser.isEmpty(); TODO: chunkReleaser is not empty as we already added unaligned chunks
                 startTicks = JfrGCEvents.startGCPhasePause();
                 try {
                     releaseSpaces();
@@ -1091,10 +1096,11 @@ public final class GCImpl implements GC {
         Header<?> originalChunk = getChunk(original, isAligned);
         Space originalSpace = HeapChunk.getSpace(originalChunk);
 
-        if (originalSpace.isOldSpace()) {
+        if (completeCollection) {
             // Mark objects in the old generation and continue depth-first traversal
             // as referenced objects aren't colored gray by copying!
             ObjectHeaderImpl.setMarkedBit(original);
+            ObjectHeaderImpl.setRememberedSetBit(original);
             // TODO: This recursive call will cause stack overflows. The Deutsch-Schorr-Waite algorithm would fix that.
             greyToBlackObjectVisitor.visitObject(original);
             return original; // Objects in the old generation cannot be promoted further.
@@ -1151,7 +1157,6 @@ public final class GCImpl implements GC {
                     }
                 }
                 if (!promoted) {
-                    // Promote the whole chunk as fallback.
                     heap.getOldGeneration().promoteChunk(originalChunk, isAligned, originalSpace);
                 }
             } else if (originalSpace.isOldSpace()) {

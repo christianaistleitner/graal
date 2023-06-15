@@ -50,6 +50,7 @@ import com.oracle.svm.core.Uninterruptible;
 import com.oracle.svm.core.genscavenge.GCImpl.ChunkReleaser;
 import com.oracle.svm.core.genscavenge.remset.RememberedSet;
 import com.oracle.svm.core.heap.ObjectVisitor;
+import com.oracle.svm.core.hub.LayoutEncoding;
 import com.oracle.svm.core.log.Log;
 import com.oracle.svm.core.thread.VMOperation;
 import com.oracle.svm.core.util.VMError;
@@ -88,33 +89,40 @@ public final class OldGeneration extends Generation {
     }
 
     /**
-     * Promote an Object from {@link YoungGeneration} to {@link OldGeneration}.
+     * Promotes an object from {@link YoungGeneration} to {@link OldGeneration}.
+     * This method may only be called during incremental collections!
+     *
+     * @see #absorb(YoungGeneration)
      */
     @AlwaysInline("GC performance")
     @Override
     public Object promoteAlignedObject(Object original, AlignedHeapChunk.AlignedHeader originalChunk, Space originalSpace) {
+        assert !GCImpl.getGCImpl().isCompleteCollection() : "may only be called during incremental collections";
         assert originalSpace.isFromSpace() && !originalSpace.isOldSpace();
-        Object copy = getSpace().promoteAlignedObject(original, originalSpace);
-        ObjectHeaderImpl.setMarkedBit(copy);
-        return copy;
+
+        return getSpace().promoteAlignedObject(original, originalSpace);
     }
 
+    /**
+     * Promotes an object from {@link YoungGeneration} to {@link OldGeneration}.
+     * This method may only be called during incremental collections!
+     *
+     * @see #absorb(YoungGeneration)
+     */
     @AlwaysInline("GC performance")
     @Override
     protected Object promoteUnalignedObject(Object original, UnalignedHeapChunk.UnalignedHeader originalChunk, Space originalSpace) {
-        assert originalSpace.isFromSpace() || originalSpace.isOldSpace();
-        if (originalSpace.isOldSpace()) {
-            RememberedSet.get().clearRememberedSet(originalChunk);
-        } else {
-            getSpace().promoteUnalignedHeapChunk(originalChunk, originalSpace);
-        }
-        ObjectHeaderImpl.setMarkedBit(original);
+        assert !GCImpl.getGCImpl().isCompleteCollection() : "may only be called during incremental collections";
+        assert originalSpace.isFromSpace() && !originalSpace.isOldSpace();
+
+        getSpace().promoteUnalignedHeapChunk(originalChunk, originalSpace);
         return original;
     }
 
     @Override
     protected boolean promoteChunk(HeapChunk.Header<?> originalChunk, boolean isAligned, Space originalSpace) {
         assert originalSpace.isFromSpace();
+        Log.log().string("Promoted chunk!!!!!!!!!!!!!!!!!!!!\n").flush();
         if (isAligned) {
             getSpace().promoteAlignedHeapChunk((AlignedHeapChunk.AlignedHeader) originalChunk, originalSpace);
             AlignedHeapChunk.walkObjects((AlignedHeapChunk.AlignedHeader) originalChunk, allObjectsMarkingVisitor);
@@ -186,19 +194,31 @@ public final class OldGeneration extends Generation {
          */
         timers.tenuredFixingUnalignedChunks.open();
         try {
+            Log.log().string("A\n").flush();
             UnalignedHeapChunk.UnalignedHeader uChunk = space.getFirstUnalignedHeapChunk();
             while (uChunk.isNonNull()) {
+                UnalignedHeapChunk.UnalignedHeader next = HeapChunk.getNext(uChunk);
+                Log.log().string("B\n").flush();
                 Pointer objPointer = UnalignedHeapChunk.getObjectStart(uChunk);
                 Object obj = objPointer.toObject();
                 if (ObjectHeaderImpl.hasMarkedBit(obj)) {
+                    Log.log().string("C\n").flush();
                     ObjectHeaderImpl.clearMarkedBit(obj);
                     RememberedSet.get().clearRememberedSet(uChunk);
-                    fixingVisitor.visitObject(obj);
+
+                    Log.log().string("[OldGeneration.fixing: fixing phase, chunk=").zhex(uChunk)
+                            .string(", unaligned]").newline().flush();
+
+                    UnalignedHeapChunk.walkObjects(uChunk, fixingVisitor);
+
+                    UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj);
+                    assert UnalignedHeapChunk.getObjectStart(uChunk).add(objSize).equal(HeapChunk.getTopPointer(uChunk));
                 } else {
+                    Log.log().string("D, ").zhex(uChunk).newline().flush();
                     space.extractUnalignedHeapChunk(uChunk);
                     chunkReleaser.add(uChunk);
                 }
-                uChunk = HeapChunk.getNext(uChunk);
+                uChunk = next;
             }
         } finally {
             timers.tenuredFixingUnalignedChunks.close();
@@ -215,7 +235,6 @@ public final class OldGeneration extends Generation {
 
             compactingVisitor.init(chunk);
             RelocationInfo.walkObjects(chunk, compactingVisitor);
-            compactingVisitor.finish();
 
             chunk = HeapChunk.getNext(chunk);
         }
@@ -241,12 +260,14 @@ public final class OldGeneration extends Generation {
         // Release empty aligned chunks.
         AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
         while (aChunk.isNonNull()) {
+            AlignedHeapChunk.AlignedHeader next = HeapChunk.getNext(aChunk);
             if (HeapChunk.getTopPointer(aChunk).equal(AlignedHeapChunk.getObjectsStart(aChunk))) {
                 // Release the empty aligned chunk.
                 space.extractAlignedHeapChunk(aChunk);
                 chunkReleaser.add(aChunk);
+                Log.log().string("[OldGeneration.releaseSpaces: chunk=").zhex(aChunk).newline().flush();
             }
-            aChunk = HeapChunk.getNext(aChunk);
+            aChunk = next;
         }
     }
 
@@ -301,5 +322,47 @@ public final class OldGeneration extends Generation {
         }
         RememberedSet.get().enableRememberedSetForChunk(chunk);
         return chunk;
+    }
+
+    /**
+     * Absorbs all {@link YoungGeneration} chunks.
+     * This method is used to promote all objects during complete collections!
+     */
+    @Uninterruptible(reason = "Called from uninterruptible code.", calleeMustBe = false)
+    public void absorb(YoungGeneration youngGeneration) {
+        space.absorb(youngGeneration.getEden());
+        for (int i = 0; i < youngGeneration.getMaxSurvivorSpaces(); i++) {
+            space.absorb(youngGeneration.getSurvivorFromSpaceAt(i));
+            space.absorb(youngGeneration.getSurvivorToSpaceAt(i));
+        }
+
+        AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
+        while (aChunk.isNonNull()) {
+            RememberedSet.get().enableRememberedSetForChunk(aChunk);
+            aChunk = HeapChunk.getNext(aChunk);
+        }
+
+        UnalignedHeapChunk.UnalignedHeader uChunk = space.getFirstUnalignedHeapChunk();
+        while (uChunk.isNonNull()) {
+            RememberedSet.get().enableRememberedSetForChunk(uChunk);
+            uChunk = HeapChunk.getNext(uChunk);
+        }
+
+        // Postcondition: No chunks remain in young generation.
+        assert youngGeneration.getEden().isEmpty() : "Eden space must be empty";
+        for (int i = 0; i < youngGeneration.getMaxSurvivorSpaces(); i++) {
+            assert youngGeneration.getSurvivorFromSpaceAt(i).isEmpty() : "Survivor spaces must be empty";
+        }
+    }
+
+    @AlwaysInline("GC performance")
+    @SuppressWarnings("static-method")
+    public boolean contains(Object object) {
+        HeapChunk.Header<?> chunk = HeapChunk.getEnclosingHeapChunk(object);
+        if (chunk.isNonNull()) {
+            Space space = HeapChunk.getSpace(chunk);
+            return space != null && space.isOldSpace();
+        }
+        return false;
     }
 }
