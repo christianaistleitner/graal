@@ -74,7 +74,7 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
         RelocationInfo.writeGapSize(relocationInfoPointer, 0);
         RelocationInfo.writeNextPlugOffset(relocationInfoPointer, 0);
 
-        Log.log().string("Wrote first relocation info at ").zhex(relocationInfoPointer)
+        Log.noopLog().string("Wrote first relocation info at ").zhex(relocationInfoPointer)
                 .string(": relocationPointer=").zhex(allocationPointer)
                 .string(": gapSize=").unsigned(0)
                 .string(": nextPlugOffset=").zhex(0)
@@ -97,7 +97,7 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
                 ObjectHeaderImpl.clearMarkedBit(obj);
 
                 if (gapSize.notEqual(0)) {
-                    Log.log().string("Gap from ").zhex(cursor.subtract(gapSize))
+                    Log.noopLog().string("Gap from ").zhex(cursor.subtract(gapSize))
                             .string(" to ").zhex(cursor)
                             .string(" (").unsigned(gapSize).string(" bytes)")
                             .newline().flush();
@@ -108,7 +108,7 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
                     int offset = (int) cursor.subtract(relocationInfoPointer).rawValue();
                     RelocationInfo.writeNextPlugOffset(relocationInfoPointer, offset);
 
-                    Log.log().string("Updated relocation info at ").zhex(relocationInfoPointer)
+                    Log.noopLog().string("Updated relocation info at ").zhex(relocationInfoPointer)
                             .string(": nextPlugOffset=").zhex(offset)
                             .newline().flush();
 
@@ -119,7 +119,7 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
                     RelocationInfo.writeGapSize(relocationInfoPointer, (int) gapSize.rawValue());
                     RelocationInfo.writeNextPlugOffset(relocationInfoPointer, 0);
 
-                    Log.log().string("Wrote relocation info at ").zhex(relocationInfoPointer)
+                    Log.noopLog().string("Wrote relocation info at ").zhex(relocationInfoPointer)
                             .string(": gapSize=").unsigned(gapSize)
                             .string(": nextPlugOffset=").zhex(0)
                             .newline().flush();
@@ -136,11 +136,11 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
                     Pointer relocationPointer = getRelocationPointer(plugSize);
                     RelocationInfo.writeRelocationPointer(relocationInfoPointer, relocationPointer);
 
-                    Log.log().string("Updated relocation info at ").zhex(relocationInfoPointer)
+                    Log.noopLog().string("Updated relocation info at ").zhex(relocationInfoPointer)
                             .string(": relocationPointer=").zhex(relocationPointer)
                             .newline().flush();
 
-                    Log.log().string("Plug from ").zhex(relocationInfoPointer)
+                    Log.noopLog().string("Plug from ").zhex(relocationInfoPointer)
                             .string(" to ").zhex(relocationInfoPointer.add(plugSize))
                             .string(" (").unsigned(plugSize).string(" bytes)")
                             .string(" will be moved to ").zhex(relocationPointer)
@@ -167,7 +167,7 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
         if (gapSize.notEqual(0)) {
             Pointer topPointer = HeapChunk.getTopPointer(chunk);
             Pointer gapStart = topPointer.subtract(gapSize);
-            Log.log().string("Gap at chunk end from ").zhex(gapStart)
+            Log.noopLog().string("Gap at chunk end from ").zhex(gapStart)
                     .string(" to ").zhex(topPointer)
                     .string(" (").unsigned(gapSize).string(" bytes)")
                     .newline().flush();
@@ -181,12 +181,12 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
 
             Pointer topPointer = HeapChunk.getTopPointer(chunk);
             Pointer plugStart = topPointer.subtract(plugSize);
-            Log.log().string("Plug at chunk end from ").zhex(plugStart)
+            Log.noopLog().string("Plug at chunk end from ").zhex(plugStart)
                     .string(" to ").zhex(topPointer)
                     .string(" (").unsigned(plugSize).string(" bytes)")
                     .newline().flush();
 
-            Log.log().string("Plug from ").zhex(relocationInfoPointer)
+            Log.noopLog().string("Plug from ").zhex(relocationInfoPointer)
                     .string(" to ").zhex(relocationInfoPointer.add(plugSize))
                     .string(" (").unsigned(plugSize).string(" bytes)")
                     .string(" will be moved to ").zhex(relocationPointer)
