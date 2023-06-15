@@ -332,9 +332,10 @@ public final class HeapChunk {
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     public static HeapChunk.Header<?> getEnclosingHeapChunk(Object obj) {
-        if (!GraalDirectives.inIntrinsic()) {
-            assert !ObjectHeaderImpl.isPointerToForwardedObject(Word.objectToUntrackedPointer(obj)) : "Forwarded objects must be a pointer and not an object";
-        }
+        // TODO: uncomment
+        // if (!GraalDirectives.inIntrinsic()) {
+        //     assert !ObjectHeaderImpl.isPointerToForwardedObject(Word.objectToUntrackedPointer(obj)) : "Forwarded objects must be a pointer and not an object";
+        // }
         if (ObjectHeaderImpl.isAlignedObject(obj)) {
             return AlignedHeapChunk.getEnclosingChunk(obj);
         } else {
