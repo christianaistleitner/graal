@@ -357,7 +357,7 @@ public final class ObjectHeaderImpl extends ObjectHeader {
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     public static void setMarkedBit(Object o) {
         UnsignedWord header = readHeaderFromObject(o);
-        writeHeaderToObject(o, header.or(MARKED_OR_FORWARDED_BIT));
+        writeHeaderToObject(o, header.or(MARKED_OR_FORWARDED_BIT).or(REMEMBERED_SET_BIT));
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
@@ -373,7 +373,7 @@ public final class ObjectHeaderImpl extends ObjectHeader {
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     public static boolean hasMarkedBit(UnsignedWord header) {
-        return header.and(MARKED_OR_FORWARDED_BIT).notEqual(0) ;
+        return header.and(MARKED_OR_FORWARDED_BIT).notEqual(0) && header.and(REMEMBERED_SET_BIT).notEqual(0);
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
@@ -384,7 +384,7 @@ public final class ObjectHeaderImpl extends ObjectHeader {
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     public static boolean isForwardedHeader(UnsignedWord header) {
-        return header.and(MARKED_OR_FORWARDED_BIT).notEqual(0) && header.and(REMEMBERED_SET_BIT).equal(0); // TODO: Fine?
+        return header.and(MARKED_OR_FORWARDED_BIT).notEqual(0) && header.and(REMEMBERED_SET_BIT).equal(0);
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)

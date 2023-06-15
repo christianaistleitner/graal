@@ -210,21 +210,18 @@ final class ReferenceObjectProcessing {
      */
     private static boolean processRememberedRef(Reference<?> dr) {
         Pointer refPointer = ReferenceInternals.getReferentPointer(dr);
-        assert refPointer.isNonNull() : "Referent is null: should not have been discovered";
+
+        if (refPointer.isNull()) {
+            assert GCImpl.getGCImpl().isCompleteCollection() : "Referent is null: should not have been discovered";
+            return false; // Referent has not survived and was set to null during tenured space garbage collection.
+        }
+
         assert !HeapImpl.getHeapImpl().isInImageHeap(refPointer) : "Image heap referent: should not have been discovered";
         Object refObject = refPointer.toObject();
 
-        // TODO: Update the Reference<?>'s referent field during the normal fixing phase.
-        if (GCImpl.getGCImpl().isCompleteCollection() && isInOldSpace(refObject)) {
-            Object relocatedObject = RelocationInfo.getRelocatedObject(refPointer);
-            ReferenceInternals.setReferent(dr, relocatedObject);
-            Log.log().string("Updated Reference (relocated), dr=").object(dr)
-                    .string(", oldReferent=").object(refObject)
-                    .string(", newReferent=").zhex(Word.objectToUntrackedPointer(relocatedObject))
-                    .newline().flush();
-            return relocatedObject != null;
+        if (isInOldSpace(refObject)) {
+            return true;
         }
-
         if (maybeUpdateForwardedReference(dr, refPointer)) {
             return true;
         }
@@ -248,15 +245,11 @@ final class ReferenceObjectProcessing {
         ObjectHeaderImpl ohi = ObjectHeaderImpl.getObjectHeaderImpl();
         UnsignedWord header = ObjectHeader.readHeaderFromPointer(referentAddr);
         if (ObjectHeaderImpl.isForwardedHeader(header)) {
-            Space space = HeapChunk.getSpace(HeapChunk.getEnclosingHeapChunk(referentAddr, header));
-            if (space.isOldSpace()) {
-                return false;
-            }
+
+            // TODO: remove
+            assert !isInOldSpace(referentAddr.toObject());
+
             Object forwardedObj = ohi.getForwardedObject(referentAddr);
-            Log.log().string("Updated Reference (forwarded), dr=").object(dr)
-                    .string(", oldReferent=").zhex(referentAddr)
-                    .string(", newReferent=").object(forwardedObj)
-                    .newline().flush();
             ReferenceInternals.setReferent(dr, forwardedObj);
             return true;
         }

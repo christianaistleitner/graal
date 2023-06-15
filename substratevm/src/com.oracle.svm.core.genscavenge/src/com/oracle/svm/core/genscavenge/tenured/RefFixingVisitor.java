@@ -42,13 +42,19 @@ public class RefFixingVisitor implements ObjectReferenceVisitor {
         return visitObjectReferenceInline(objRef, 0, compressed, holderObject);
     }
 
+    /**
+     * @param objRef Pointer to Pointer
+     */
     @Override
     public boolean visitObjectReferenceInline(Pointer objRef, int innerOffset, boolean compressed, Object holderObject) {
-        Pointer offsetP = ReferenceAccess.singleton().readObjectAsUntrackedPointer(objRef, compressed);
-        assert offsetP.isNonNull() || innerOffset == 0;
+        assert innerOffset == 0; // Will always be 0.
 
-        Pointer p = offsetP.subtract(innerOffset);
-        if (p.isNull() || HeapImpl.getHeapImpl().isInImageHeap(p)) {
+        Pointer p = ReferenceAccess.singleton().readObjectAsUntrackedPointer(objRef, compressed);
+        if (p.isNull()) {
+            return true;
+        }
+
+        if (HeapImpl.getHeapImpl().isInImageHeap(p)) {
             return true;
         }
 
@@ -73,18 +79,6 @@ public class RefFixingVisitor implements ObjectReferenceVisitor {
             RememberedSet.get().dirtyCardIfNecessary(holderObject, newLocation.toObject());
         }
 
-        if (debug) {
-            Log.log().string("Updated location, old=").zhex(p)
-                    .string(", new=").zhex(newLocation)
-                    .string(", diff=").signed(newLocation.subtract(p))
-                    .string(", holderObject=").object(holderObject)
-                    .string(", objRef=").zhex(objRef)
-                    .string(", innerOffset=").signed(innerOffset)
-                    .string(", compressed=").bool(compressed)
-                    .newline().flush();
-        }
-
         return true;
     }
 }
-
