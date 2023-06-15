@@ -100,9 +100,9 @@ public class CompactingVisitor implements ObjectVisitor {
         }
     }
 
-    public void finish() {
-    }
-
+    /**
+     * @return the number of copied bytes
+     */
     private UnsignedWord copyObject(Object obj, Pointer dest) {
         assert VMOperation.isGCInProgress();
         assert ObjectHeaderImpl.isAlignedObject(obj);
@@ -110,12 +110,6 @@ public class CompactingVisitor implements ObjectVisitor {
 
         UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj);
         Pointer src = Word.objectToUntrackedPointer(obj);
-
-        Log.noopLog().string("Copying object from ").zhex(src).character('-').zhex(src.add(objSize))
-                .string(" (").unsigned(objSize).string(" B)")
-                .string(" to ").zhex(dest).character('-').zhex(dest.add(objSize))
-                .string(" (").unsigned(objSize).string(" B)")
-                .newline().flush();
 
         UnmanagedMemoryUtil.copyLongsForward(src, dest, objSize);
 

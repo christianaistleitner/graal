@@ -94,7 +94,7 @@ final class GreyToBlackObjRefVisitor implements ObjectReferenceVisitor {
         Word header = ObjectHeader.readHeaderFromPointer(p);
         if (GCImpl.getGCImpl().isCompleteCollection() || !RememberedSet.get().hasRememberedSet(header)) {
 
-            if (ObjectHeaderImpl.isForwardedHeader(header)) {
+            if (!GCImpl.getGCImpl().isCompleteCollection() && ObjectHeaderImpl.isForwardedHeader(header)) {
                 counters.noteForwardedReferent();
                 // Update the reference to point to the forwarded Object.
                 Object obj = ohi.getForwardedObject(p, header);
