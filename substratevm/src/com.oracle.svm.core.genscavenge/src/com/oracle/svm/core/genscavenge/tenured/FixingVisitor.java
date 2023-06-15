@@ -24,8 +24,16 @@
  */
 package com.oracle.svm.core.genscavenge.tenured;
 
+import static jdk.graal.compiler.nodes.extended.BranchProbabilityNode.SLOW_PATH_PROBABILITY;
+import static jdk.graal.compiler.nodes.extended.BranchProbabilityNode.probability;
+
 import com.oracle.svm.core.heap.ObjectVisitor;
+import com.oracle.svm.core.heap.ReferenceInternals;
+import com.oracle.svm.core.hub.DynamicHub;
 import com.oracle.svm.core.hub.InteriorObjRefWalker;
+import com.oracle.svm.core.snippets.KnownIntrinsics;
+
+import java.lang.ref.Reference;
 
 public class FixingVisitor implements ObjectVisitor {
 
@@ -37,33 +45,12 @@ public class FixingVisitor implements ObjectVisitor {
 
     @Override
     public boolean visitObject(Object obj) {
-
-        // fixes Target_java_lang_ref_Reference.referent
-            /*
-            DynamicHub hub = KnownIntrinsics.readHub(obj);
-            if (probability(SLOW_PATH_PROBABILITY, hub.isReferenceInstanceClass())) {
-                Reference<?> dr = (Reference<?>) obj;
-
-                Pointer objRef = ReferenceInternals.getReferentFieldAddress(dr);
-
-                Pointer p = ReferenceAccess.singleton().readObjectAsUntrackedPointer(objRef, true);
-
-                if (p.isNonNull() && !Heap.getHeap().isInImageHeap(p)) {
-                    Log.log().string("A").newline().flush();
-                    if (ObjectHeaderImpl.hasMarkedBit(p.toObject())) {
-                        Log.log().string("B").newline().flush();
-                        refFixingVisitor.visitObjectReference(objRef, true, dr);
-                    } else {
-                        Log.log().string("C").newline().flush();
-                        ReferenceInternals.setReferent(dr, null); // dead
-                        Reference<?> next = (ReferenceObjectProcessing.rememberedRefsList != null) ? ReferenceObjectProcessing.rememberedRefsList : dr;
-                        ReferenceInternals.setNextDiscovered(dr, next);
-                        ReferenceObjectProcessing.rememberedRefsList = dr;
-                    }
-                }
-            }
-            */
-
+        DynamicHub hub = KnownIntrinsics.readHub(obj);
+        if (probability(SLOW_PATH_PROBABILITY, hub.isReferenceInstanceClass())) {
+            // fixes Target_java_lang_ref_Reference.referent
+            Reference<?> dr = (Reference<?>) obj;
+            refFixingVisitor.visitObjectReference(ReferenceInternals.getReferentFieldAddress(dr), true, dr);
+        }
         InteriorObjRefWalker.walkObjectInline(obj, refFixingVisitor);
         return true;
     }
