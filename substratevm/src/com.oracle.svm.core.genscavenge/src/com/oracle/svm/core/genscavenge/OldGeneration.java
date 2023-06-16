@@ -159,7 +159,7 @@ public final class OldGeneration extends Generation {
         timers.tenuredFixingAlignedChunks.open();
         AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
         while (aChunk.isNonNull()) {
-            Log.log().string("[OldGeneration.fixing: fixing phase, chunk=").zhex(aChunk)
+            Log.noopLog().string("[OldGeneration.fixing: fixing phase, chunk=").zhex(aChunk)
                     .string(", top=").zhex(HeapChunk.getTopPointer(aChunk))
                     .string("]").newline().flush();
             RelocationInfo.walkObjects(aChunk, fixingVisitor);
@@ -201,19 +201,16 @@ public final class OldGeneration extends Generation {
          */
         timers.tenuredFixingUnalignedChunks.open();
         try {
-            Log.log().string("A\n").flush();
             UnalignedHeapChunk.UnalignedHeader uChunk = space.getFirstUnalignedHeapChunk();
             while (uChunk.isNonNull()) {
                 UnalignedHeapChunk.UnalignedHeader next = HeapChunk.getNext(uChunk);
-                Log.log().string("B\n").flush();
                 Pointer objPointer = UnalignedHeapChunk.getObjectStart(uChunk);
                 Object obj = objPointer.toObject();
                 if (ObjectHeaderImpl.hasMarkedBit(obj)) {
-                    Log.log().string("C\n").flush();
                     ObjectHeaderImpl.clearMarkedBit(obj);
                     RememberedSet.get().clearRememberedSet(uChunk);
 
-                    Log.log().string("[OldGeneration.fixing: fixing phase, chunk=").zhex(uChunk)
+                    Log.noopLog().string("[OldGeneration.fixing: fixing phase, chunk=").zhex(uChunk)
                             .string(", unaligned]").newline().flush();
 
                     UnalignedHeapChunk.walkObjects(uChunk, fixingVisitor);
@@ -221,7 +218,6 @@ public final class OldGeneration extends Generation {
                     UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj);
                     assert UnalignedHeapChunk.getObjectStart(uChunk).add(objSize).equal(HeapChunk.getTopPointer(uChunk));
                 } else {
-                    Log.log().string("D, ").zhex(uChunk).newline().flush();
                     space.extractUnalignedHeapChunk(uChunk);
                     chunkReleaser.add(uChunk);
                 }
@@ -237,7 +233,7 @@ public final class OldGeneration extends Generation {
         timers.tenuredCompactingCunks.open();
         AlignedHeapChunk.AlignedHeader chunk = space.getFirstAlignedHeapChunk();
         while (chunk.isNonNull()) {
-            Log.log().string("[OldGeneration.compacting: chunk=").zhex(chunk)
+            Log.noopLog().string("[OldGeneration.compacting: chunk=").zhex(chunk)
                     .string("]\n").flush();
 
             compactingVisitor.init(chunk);
@@ -250,7 +246,7 @@ public final class OldGeneration extends Generation {
         chunk = space.getFirstAlignedHeapChunk();
         timers.tenuredUpdatingRememberedSet.open();
         while (chunk.isNonNull()) {
-            Log.log().string("[OldGeneration.compacting: chunk=").zhex(chunk)
+            Log.noopLog().string("[OldGeneration.compacting: chunk=").zhex(chunk)
                     .string(", top=").zhex(HeapChunk.getTopPointer(chunk))
                     .string(", done]\n").flush();
 
@@ -272,7 +268,7 @@ public final class OldGeneration extends Generation {
                 // Release the empty aligned chunk.
                 space.extractAlignedHeapChunk(aChunk);
                 chunkReleaser.add(aChunk);
-                Log.log().string("[OldGeneration.releaseSpaces: chunk=").zhex(aChunk).newline().flush();
+                Log.noopLog().string("[OldGeneration.releaseSpaces: chunk=").zhex(aChunk).newline().flush();
             }
             aChunk = next;
         }
