@@ -179,7 +179,7 @@ final class ReferenceObjectProcessing {
             if (!processRememberedRef(current) && ReferenceInternals.hasQueue(current)) {
                 // The referent is dead, so add it to the list of references that will be processed
                 // by the reference handler.
-                Log.log().string("Referent died, dr=").object(current).newline().flush();
+                Log.noopLog().string("Referent died, dr=").object(current).newline().flush();
                 ReferenceInternals.setNextDiscovered(current, pendingHead);
                 pendingHead = current;
             } else {
