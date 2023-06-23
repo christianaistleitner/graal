@@ -55,7 +55,7 @@ import com.oracle.svm.core.util.VMError;
  * generic ones. So, performance-wise it is best to call the most specific method that is applicable
  * to your use case.
  */
-public final class JavaMemoryUtil {
+public final class JavaMemoryUtil { // TODO
 
     /**
      * Copy bytes from one Java object to another. The copied memory areas may overlap.

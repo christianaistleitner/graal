@@ -247,8 +247,6 @@ public final class GCImpl implements GC {
     }
 
     private boolean doCollectImpl(GCCause cause, long requestingNanoTime, boolean forceFullGC, boolean forceNoIncremental) {
-        precondition();
-
         CommittedMemoryProvider.get().beforeGarbageCollection();
 
         boolean incremental = !forceNoIncremental && !policy.shouldCollectCompletely(false);
