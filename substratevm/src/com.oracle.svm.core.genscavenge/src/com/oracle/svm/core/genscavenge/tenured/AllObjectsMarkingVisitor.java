@@ -35,4 +35,3 @@ public class AllObjectsMarkingVisitor implements ObjectVisitor {
         return true;
     }
 }
-
