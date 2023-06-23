@@ -34,6 +34,7 @@ import static jdk.graal.compiler.nodes.extended.BranchProbabilityNode.VERY_SLOW_
 import static jdk.graal.compiler.nodes.extended.BranchProbabilityNode.probability;
 
 import com.oracle.svm.core.NeverInline;
+import com.oracle.svm.core.SubstrateOptions;
 import com.oracle.svm.core.code.RuntimeCodeInfoMemory;
 import com.oracle.svm.core.genscavenge.tenured.AllObjectsMarkingVisitor;
 import com.oracle.svm.core.genscavenge.tenured.CompactingVisitor;
@@ -42,6 +43,9 @@ import com.oracle.svm.core.genscavenge.tenured.PlanningVisitor;
 import com.oracle.svm.core.genscavenge.tenured.RefFixingVisitor;
 import com.oracle.svm.core.genscavenge.tenured.RelocationInfo;
 import com.oracle.svm.core.graal.RuntimeCompilation;
+import com.oracle.svm.core.thread.VMThreads;
+import com.oracle.svm.core.threadlocal.VMThreadLocalMTSupport;
+import org.graalvm.nativeimage.IsolateThread;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
 import org.graalvm.nativeimage.c.function.CodePointer;
@@ -129,21 +133,22 @@ public final class OldGeneration extends Generation {
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     protected boolean promoteChunk(HeapChunk.Header<?> originalChunk, boolean isAligned, Space originalSpace) {
         assert originalSpace.isFromSpace();
-        Log.log().string("Promoted chunk!!!!!!!!!!!!!!!!!!!!\n").flush();
+        assert false : "TODO: Pinned objects aren't supported yet";
         if (isAligned) {
             getSpace().promoteAlignedHeapChunk((AlignedHeapChunk.AlignedHeader) originalChunk, originalSpace);
-            AlignedHeapChunk.walkObjects((AlignedHeapChunk.AlignedHeader) originalChunk, allObjectsMarkingVisitor);
+            AlignedHeapChunk.walkObjectsInline((AlignedHeapChunk.AlignedHeader) originalChunk, allObjectsMarkingVisitor);
         } else {
             getSpace().promoteUnalignedHeapChunk((UnalignedHeapChunk.UnalignedHeader) originalChunk, originalSpace);
-            UnalignedHeapChunk.walkObjects((UnalignedHeapChunk.UnalignedHeader) originalChunk, allObjectsMarkingVisitor);
+            UnalignedHeapChunk.walkObjectsInline((UnalignedHeapChunk.UnalignedHeader) originalChunk, allObjectsMarkingVisitor);
         }
         return true;
     }
 
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     void pinAlignedObject(Object original) {
         assert HeapChunk.getSpace(HeapChunk.getEnclosingHeapChunk(original)) != space;
         ObjectHeaderImpl.setMarkedBit(original);
-        Log.log().string("Pinned object!!!!!!!!!!!!!!!!!!!!\n").flush();
+        assert false : "TODO: Pinned objects aren't supported yet";
         // TODO: Pinned objects mustn't move when compressing chunks!
     }
 
@@ -172,7 +177,16 @@ public final class OldGeneration extends Generation {
         timers.tenuredFixingImageHeap.close();
 
         timers.tenuredFixingThreadLocal.open();
-        ThreadLocalMTWalker.walk(refFixingVisitor);
+        if (SubstrateOptions.MultiThreaded.getValue()) {
+            Timer walkThreadLocalsTimer = timers.walkThreadLocals.open();
+            try {
+                for (IsolateThread isolateThread = VMThreads.firstThread(); isolateThread.isNonNull(); isolateThread = VMThreads.nextThread(isolateThread)) {
+                    VMThreadLocalMTSupport.singleton().walk(isolateThread, refFixingVisitor);
+                }
+            } finally {
+                walkThreadLocalsTimer.close();
+            }
+        }
         timers.tenuredFixingThreadLocal.close();
 
         timers.tenuredFixingRuntimeCodeCache.open();
@@ -213,7 +227,7 @@ public final class OldGeneration extends Generation {
                     Log.noopLog().string("[OldGeneration.fixing: fixing phase, chunk=").zhex(uChunk)
                             .string(", unaligned]").newline().flush();
 
-                    UnalignedHeapChunk.walkObjects(uChunk, fixingVisitor);
+                    UnalignedHeapChunk.walkObjectsInline(uChunk, fixingVisitor);
 
                     UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj);
                     assert UnalignedHeapChunk.getObjectStart(uChunk).add(objSize).equal(HeapChunk.getTopPointer(uChunk));
@@ -339,7 +353,7 @@ public final class OldGeneration extends Generation {
      * Absorbs all {@link YoungGeneration} chunks.
      * This method is used to promote all objects during complete collections!
      */
-    @Uninterruptible(reason = "Called from uninterruptible code.", calleeMustBe = false)
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     public void absorb(YoungGeneration youngGeneration) {
         space.absorb(youngGeneration.getEden());
         for (int i = 0; i < youngGeneration.getMaxSurvivorSpaces(); i++) {
