@@ -142,10 +142,7 @@ final class ReferenceObjectProcessing {
                 // Important: we need to pass the reference object as holder so that the remembered
                 // set can be updated accordingly!
                 refVisitor.visitObjectReference(ReferenceInternals.getReferentFieldAddress(dr), true, dr);
-                refObject = ReferenceInternals.getReferent(dr); // maybe promoted!
-                if (isInToSpace(refObject)) {
-                    return; // referent will survive and referent field has been updated
-                }
+                return; // referent will survive
             }
         }
 
@@ -179,7 +176,6 @@ final class ReferenceObjectProcessing {
             if (!processRememberedRef(current) && ReferenceInternals.hasQueue(current)) {
                 // The referent is dead, so add it to the list of references that will be processed
                 // by the reference handler.
-                Log.noopLog().string("Referent died, dr=").object(current).newline().flush();
                 ReferenceInternals.setNextDiscovered(current, pendingHead);
                 pendingHead = current;
             } else {

@@ -31,7 +31,8 @@ import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
 import com.oracle.svm.core.genscavenge.remset.RememberedSet;
 import com.oracle.svm.core.heap.ObjectReferenceVisitor;
 import com.oracle.svm.core.heap.ReferenceAccess;
-import com.oracle.svm.core.log.Log;
+
+import java.lang.ref.Reference;
 
 public class RefFixingVisitor implements ObjectReferenceVisitor {
 
@@ -67,16 +68,13 @@ public class RefFixingVisitor implements ObjectReferenceVisitor {
         }
 
         Pointer newLocation = RelocationInfo.getRelocatedObjectPointer(p);
-        if (newLocation.isNull()) {
-            Log.log().string("ERROR - holder=").object(holderObject).newline().flush();
-            // assert false;
-        }
+        assert newLocation.isNonNull() || holderObject instanceof Reference<?>;
 
-        Object offsetObj = (innerOffset == 0) ? newLocation.toObject() : newLocation.add(innerOffset).toObject();
-        ReferenceAccess.singleton().writeObjectAt(objRef, offsetObj, compressed);
+        Object relocatedObj = newLocation.toObject();
+        ReferenceAccess.singleton().writeObjectAt(objRef, relocatedObj, compressed);
 
         if (HeapImpl.getHeapImpl().isInImageHeap(holderObject)){
-            RememberedSet.get().dirtyCardIfNecessary(holderObject, newLocation.toObject());
+            RememberedSet.get().dirtyCardIfNecessary(holderObject, relocatedObj);
         }
 
         return true;
