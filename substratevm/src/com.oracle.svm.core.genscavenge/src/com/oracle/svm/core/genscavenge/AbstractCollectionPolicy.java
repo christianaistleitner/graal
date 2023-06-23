@@ -26,7 +26,6 @@ package com.oracle.svm.core.genscavenge;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import com.oracle.svm.core.heap.GCCause;
 import jdk.compiler.graal.api.replacements.Fold;
 import jdk.compiler.graal.nodes.PauseNode;
 import org.graalvm.nativeimage.Platform;
