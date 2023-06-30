@@ -131,7 +131,7 @@ final class Timers {
     final Timer tenuredFixingStack = new Timer("tenuredFixingStack");
     final Timer tenuredFixingUnalignedChunks = new Timer("tenuredFixingUnalignedChunks");
     final Timer tenuredCompacting = new Timer("tenuredCompacting");
-    final Timer tenuredCompactingCunks = new Timer("tenuredCompactingCunks");
+    final Timer tenuredCompactingChunks = new Timer("tenuredCompactingChunks");
     final Timer tenuredUpdatingRememberedSet = new Timer("tenuredUpdatingRememberedSet");
     final Timer releaseSpaces = new Timer("releaseSpaces");
     final Timer verifyAfter = new Timer("verifyAfter");
@@ -169,7 +169,7 @@ final class Timers {
         tenuredFixingStack.reset();
         tenuredFixingUnalignedChunks.reset();
         tenuredCompacting.reset();
-        tenuredCompactingCunks.reset();
+        tenuredCompactingChunks.reset();
         tenuredUpdatingRememberedSet.reset();
         cleanCodeCache.reset();
         referenceObjects.reset();
@@ -205,7 +205,7 @@ final class Timers {
             logOneTimer(log, "          ", tenuredFixingStack);
             logOneTimer(log, "          ", tenuredFixingUnalignedChunks);
             logOneTimer(log, "      ", tenuredCompacting);
-            logOneTimer(log, "          ", tenuredCompactingCunks);
+            logOneTimer(log, "          ", tenuredCompactingChunks);
             logOneTimer(log, "          ", tenuredUpdatingRememberedSet);
             logOneTimer(log, "      ", cleanCodeCache);
             logOneTimer(log, "      ", referenceObjects);
