@@ -68,7 +68,7 @@ public class RefFixingVisitor implements ObjectReferenceVisitor {
         }
 
         Pointer newLocation = RelocationInfo.getRelocatedObjectPointer(p);
-        assert newLocation.isNonNull() || holderObject instanceof Reference<?>;
+        assert newLocation.isNonNull() || holderObject == null || holderObject instanceof Reference<?>;
 
         Object relocatedObj = newLocation.toObject();
         ReferenceAccess.singleton().writeObjectAt(objRef, relocatedObj, compressed);
