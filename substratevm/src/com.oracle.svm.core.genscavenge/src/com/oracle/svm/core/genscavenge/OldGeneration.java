@@ -244,7 +244,7 @@ public final class OldGeneration extends Generation {
 
     void compacting(Timers timers) {
         // Phase 3: Copy objects to their new location
-        timers.tenuredCompactingCunks.open();
+        timers.tenuredCompactingChunks.open();
         AlignedHeapChunk.AlignedHeader chunk = space.getFirstAlignedHeapChunk();
         while (chunk.isNonNull()) {
             Log.noopLog().string("[OldGeneration.compacting: chunk=").zhex(chunk)
@@ -255,7 +255,7 @@ public final class OldGeneration extends Generation {
 
             chunk = HeapChunk.getNext(chunk);
         }
-        timers.tenuredCompactingCunks.close();
+        timers.tenuredCompactingChunks.close();
 
         chunk = space.getFirstAlignedHeapChunk();
         timers.tenuredUpdatingRememberedSet.open();
