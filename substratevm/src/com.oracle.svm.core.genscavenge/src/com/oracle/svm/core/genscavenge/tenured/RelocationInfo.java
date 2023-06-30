@@ -165,7 +165,8 @@ public class RelocationInfo {
 
         Pointer topPointer = HeapChunk.getTopPointer(chunk);
         if (p.aboveOrEqual(topPointer)) {
-            throw VMError.shouldNotReachHere("Object is above top pointer.");
+            // Object is located in gap at chunk end.
+            return WordFactory.nullPointer(); // object didn't survive
         }
 
         Pointer relocationInfo = AlignedHeapChunk.getObjectsStart(chunk);
