@@ -115,6 +115,8 @@ public final class GCImpl implements GC {
     private final CollectionVMOperation collectOperation = new CollectionVMOperation();
     private final ChunkReleaser chunkReleaser = new ChunkReleaser();
 
+    private final MarkQueue markQueue = new MarkQueue();
+
     private final CollectionPolicy policy;
     private boolean completeCollection = false;
     private UnsignedWord collectionEpoch = WordFactory.zero();
@@ -473,6 +475,10 @@ public final class GCImpl implements GC {
             }
 
             if (!incremental) {
+                while (!markQueue.isEmpty()) {
+                    greyToBlackObjectVisitor.visitObjectInline(markQueue.pop());
+                }
+
                 Timer tenuredPlanningTimer = timers.tenuredPlanning.open();
                 try {
                     startTicks = JfrGCEvents.startGCPhasePause();
@@ -1071,7 +1077,7 @@ public final class GCImpl implements GC {
             ObjectHeaderImpl.setMarkedBit(original);
             ObjectHeaderImpl.setRememberedSetBit(original);
             // TODO: This recursive call will cause stack overflows. The Deutsch-Schorr-Waite algorithm would fix that.
-            greyToBlackObjectVisitor.visitObject(original);
+            markQueue.push(original);
             return original; // Objects in the old generation cannot be promoted further.
         }
 
@@ -1204,6 +1210,11 @@ public final class GCImpl implements GC {
     @Fold
     GreyToBlackObjectVisitor getGreyToBlackObjectVisitor() {
         return greyToBlackObjectVisitor;
+    }
+
+    @Fold
+    MarkQueue getMarkQueue() {
+        return markQueue;
     }
 
     private static class CollectionVMOperation extends NativeVMOperation {
