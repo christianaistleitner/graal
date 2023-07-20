@@ -50,11 +50,8 @@ public final class GreyToBlackObjectVisitor implements ObjectVisitor {
 
     @Override
     @NeverInline("Non-performance critical version")
-    @Uninterruptible(reason = "Called from uninterruptible code.")
     public boolean visitObject(Object o) {
-        // TODO: Still a performance issue?
-        // throw VMError.shouldNotReachHere("For performance reasons, this should not be called.");
-        return visitObjectInline(o);
+        throw VMError.shouldNotReachHere("For performance reasons, this should not be called.");
     }
 
     @Override
