@@ -87,15 +87,22 @@ public final class AlignedHeapChunk {
      */
     @RawStructure
     public interface AlignedHeader extends HeapChunk.Header<AlignedHeader> {
+        @RawField
+        boolean getShouldSweepInsteadOfCompact();
+
+        @RawField
+        void setShouldSweepInsteadOfCompact(boolean value);
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     public static void initialize(AlignedHeader chunk, UnsignedWord chunkSize) {
         HeapChunk.initialize(chunk, AlignedHeapChunk.getObjectsStart(chunk), chunkSize);
+        chunk.setShouldSweepInsteadOfCompact(false);
     }
 
     public static void reset(AlignedHeader chunk) {
         HeapChunk.initialize(chunk, AlignedHeapChunk.getObjectsStart(chunk), HeapChunk.getEndOffset(chunk));
+        chunk.setShouldSweepInsteadOfCompact(false);
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
