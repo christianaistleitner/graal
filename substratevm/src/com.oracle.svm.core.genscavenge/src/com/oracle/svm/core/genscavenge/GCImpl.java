@@ -497,9 +497,7 @@ public final class GCImpl implements GC {
                 } finally {
                     tenuredPlanningTimer.close();
                 }
-            }
 
-            if (!incremental) {
                 Timer tenuredFixingTimer = timers.tenuredFixing.open();
                 try {
                     startTicks = JfrGCEvents.startGCPhasePause();
@@ -1133,10 +1131,20 @@ public final class GCImpl implements GC {
         if (referent != null && !heap.isInImageHeap(referent)) {
             boolean isAligned = ObjectHeaderImpl.isAlignedObject(referent);
             Header<?> originalChunk = getChunk(referent, isAligned);
+
+            if (completeCollection) {
+                /*
+                 * As we are using the Mark-and-Compact approach for complete collections,
+                 * we have to make sure that the contained chunk is swept instead of compacted.
+                 */
+                heap.getOldGeneration().pinObject(referent, originalChunk, isAligned);
+                return;
+            }
+
             Space originalSpace = HeapChunk.getSpace(originalChunk);
-            if (originalSpace.isFromSpace()) {
+            if (originalSpace.isFromSpace() && !originalSpace.isOldSpace()) {
                 boolean promoted = false;
-                if (!completeCollection && originalSpace.getNextAgeForPromotion() < policy.getTenuringAge()) {
+                if (originalSpace.getNextAgeForPromotion() < policy.getTenuringAge()) {
                     promoted = heap.getYoungGeneration().promoteChunk(originalChunk, isAligned, originalSpace);
                     if (!promoted) {
                         accounting.onSurvivorOverflowed();
@@ -1145,8 +1153,6 @@ public final class GCImpl implements GC {
                 if (!promoted) {
                     heap.getOldGeneration().promoteChunk(originalChunk, isAligned, originalSpace);
                 }
-            } else if (originalSpace.isOldSpace()) {
-                heap.getOldGeneration().pinAlignedObject(referent);
             }
         }
     }
