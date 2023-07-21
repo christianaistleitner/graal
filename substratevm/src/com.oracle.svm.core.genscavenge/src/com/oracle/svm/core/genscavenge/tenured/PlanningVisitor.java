@@ -40,6 +40,8 @@ import org.graalvm.word.WordFactory;
 
 public class PlanningVisitor implements AlignedHeapChunk.Visitor {
 
+    private final SweepingVisitor sweepingVisitor = new SweepingVisitor();
+
     private AlignedHeapChunk.AlignedHeader chunk;
 
     private Pointer allocationPointer;
@@ -80,7 +82,7 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
              * but in here, when compacting the tenured space, we expect that there aren't any marked objects
              * which have their "IdentityHashFromAddress" object header flag set.
              */
-            assert !ObjectHeaderImpl.hasIdentityHashFromAddressInline(header);
+            assert !ObjectHeaderImpl.hasIdentityHashFromAddressInline(header) || chunk.getShouldSweepInsteadOfCompact();
             UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj);
 
             if (ObjectHeaderImpl.hasMarkedBit(obj)) {
@@ -137,6 +139,15 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
         if (plugSize.notEqual(0)) {
             Pointer relocationPointer = getRelocationPointer(plugSize);
             RelocationInfo.writeRelocationPointer(relocationInfoPointer, relocationPointer);
+        }
+
+        if (chunk.getShouldSweepInsteadOfCompact()) {
+            RelocationInfo.visit(chunk, sweepingVisitor);
+            chunk.setShouldSweepInsteadOfCompact(false);
+
+            // Reset allocation pointer as we want to resume after the swept memory.
+            this.chunk = chunk;
+            this.allocationPointer = HeapChunk.getTopPointer(chunk);
         }
 
         return true;
