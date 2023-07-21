@@ -41,6 +41,8 @@ import com.oracle.svm.core.log.Log;
 
 public class PlanningVisitor implements AlignedHeapChunk.Visitor {
 
+    private final SweepingVisitor sweepingVisitor = new SweepingVisitor();
+
     private AlignedHeapChunk.AlignedHeader chunk;
 
     private Pointer allocationPointer;
@@ -192,6 +194,13 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
                     .string(" will be moved to ").zhex(relocationPointer)
                     .character('-').zhex(relocationPointer.add(plugSize))
                     .newline().flush();
+        }
+
+        if (chunk.getShouldSweepInsteadOfCompact()) {
+            RelocationInfo.visit(chunk, sweepingVisitor);
+            chunk.setShouldSweepInsteadOfCompact(false);
+            this.chunk = chunk;
+            this.allocationPointer = HeapChunk.getTopPointer(chunk);
         }
 
         return true;
