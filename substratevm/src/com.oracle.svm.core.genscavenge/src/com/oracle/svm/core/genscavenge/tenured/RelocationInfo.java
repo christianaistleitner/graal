@@ -29,9 +29,8 @@ import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
 import com.oracle.svm.core.genscavenge.HeapChunk;
 import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
 import com.oracle.svm.core.heap.ObjectVisitor;
+import com.oracle.svm.core.heap.RestrictHeapAccess;
 import com.oracle.svm.core.hub.LayoutEncoding;
-import com.oracle.svm.core.log.Log;
-import com.oracle.svm.core.util.VMError;
 
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
@@ -190,5 +189,48 @@ public class RelocationInfo {
 
     public static int getSize() {
         return 16; // TODO
+    }
+
+    public static void visit(AlignedHeapChunk.AlignedHeader chunk, Visitor visitor) {
+        Pointer cursor = AlignedHeapChunk.getObjectsStart(chunk);
+        while (cursor.isNonNull()) {
+            // Visitor might write new data at cursor location.
+            Pointer next = RelocationInfo.getNextRelocationInfo(cursor);
+            boolean success = visitor.visitInline(cursor);
+            if (!success) {
+                return;
+            }
+            cursor = next;
+        }
+    }
+
+    /**
+     * Supply a closure to be applied to {@link Pointer}s to relocation info locations.
+     */
+    public interface Visitor {
+
+        /**
+         * Visit a {@link Pointer} to relocation info.
+         *
+         * @param p The {@link Pointer} to be visited.
+         * @return {@code true} if visiting should continue, {@code false} if visiting should stop.
+         */
+        @RestrictHeapAccess(
+                access = RestrictHeapAccess.Access.NO_ALLOCATION,
+                reason = "Must not allocate while visiting the heap."
+        )
+        boolean visit(Pointer p);
+
+        /**
+         * Visit a {@link Pointer} to relocation info like {@link #visit}, but inlined for performance.
+         *
+         * @param p The {@link Pointer} to be visited.
+         * @return {@code true} if visiting should continue, {@code false} if visiting should stop.
+         */
+        @RestrictHeapAccess(
+                access = RestrictHeapAccess.Access.NO_ALLOCATION,
+                reason = "Must not allocate while visiting the heap."
+        )
+        boolean visitInline(Pointer p);
     }
 }
