@@ -32,7 +32,6 @@ import com.oracle.svm.core.Uninterruptible;
 import com.oracle.svm.core.code.RuntimeCodeInfoMemory;
 import com.oracle.svm.core.genscavenge.GCImpl.ChunkReleaser;
 import com.oracle.svm.core.genscavenge.remset.RememberedSet;
-import com.oracle.svm.core.genscavenge.tenured.AllObjectsMarkingVisitor;
 import com.oracle.svm.core.genscavenge.tenured.CompactingVisitor;
 import com.oracle.svm.core.genscavenge.tenured.FixingVisitor;
 import com.oracle.svm.core.genscavenge.tenured.PlanningVisitor;
@@ -71,7 +70,6 @@ public final class OldGeneration extends Generation {
     private final RefFixingVisitor refFixingVisitor = new RefFixingVisitor();
     private final FixingVisitor fixingVisitor = new FixingVisitor(refFixingVisitor);
     private final CompactingVisitor compactingVisitor = new CompactingVisitor();
-    private final AllObjectsMarkingVisitor allObjectsMarkingVisitor = new AllObjectsMarkingVisitor();
     private final RuntimeCodeCacheWalker runtimeCodeCacheWalker = new RuntimeCodeCacheWalker(refFixingVisitor);
 
     @Platforms(Platform.HOSTED_ONLY.class)
@@ -127,24 +125,30 @@ public final class OldGeneration extends Generation {
     @Override
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     protected boolean promoteChunk(HeapChunk.Header<?> originalChunk, boolean isAligned, Space originalSpace) {
-        assert originalSpace.isFromSpace();
-        assert false : "TODO: Pinned objects aren't supported yet";
+        assert !GCImpl.getGCImpl().isCompleteCollection() : "may only be called during incremental collections";
+        assert originalSpace.isFromSpace() && !originalSpace.isOldSpace();
+
         if (isAligned) {
             getSpace().promoteAlignedHeapChunk((AlignedHeapChunk.AlignedHeader) originalChunk, originalSpace);
-            AlignedHeapChunk.walkObjectsInline((AlignedHeapChunk.AlignedHeader) originalChunk, allObjectsMarkingVisitor);
         } else {
             getSpace().promoteUnalignedHeapChunk((UnalignedHeapChunk.UnalignedHeader) originalChunk, originalSpace);
-            UnalignedHeapChunk.walkObjectsInline((UnalignedHeapChunk.UnalignedHeader) originalChunk, allObjectsMarkingVisitor);
         }
+
         return true;
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
-    void pinAlignedObject(Object original) {
-        assert HeapChunk.getSpace(HeapChunk.getEnclosingHeapChunk(original)) != space;
-        ObjectHeaderImpl.setMarkedBit(original);
-        assert false : "TODO: Pinned objects aren't supported yet";
-        // TODO: Pinned objects mustn't move when compressing chunks!
+    void pinObject(Object obj, HeapChunk.Header<?> chunk, boolean isAligned) {
+        assert GCImpl.getGCImpl().isCompleteCollection() : "may only be called during complete collections";
+        assert HeapChunk.getSpace(chunk) == space : "object must already reside in tenured space";
+
+        if (isAligned) {
+            AlignedHeapChunk.AlignedHeader alignedChunk = (AlignedHeapChunk.AlignedHeader) chunk;
+            alignedChunk.setShouldSweepInsteadOfCompact(true);
+        }
+
+        ObjectHeaderImpl.setMarkedBit(obj);
+        GCImpl.getGCImpl().getMarkQueue().push(obj);
     }
 
     void planning() {
