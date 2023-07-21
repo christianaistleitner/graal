@@ -41,6 +41,8 @@ import com.oracle.svm.core.hub.LayoutEncoding;
 
 public class PlanningVisitor implements AlignedHeapChunk.Visitor {
 
+    private final SweepingVisitor sweepingVisitor = new SweepingVisitor();
+
     private AlignedHeapChunk.AlignedHeader chunk;
 
     private Pointer allocationPointer;
@@ -138,6 +140,15 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
         if (plugSize.notEqual(0)) {
             Pointer relocationPointer = getRelocationPointer(plugSize);
             RelocationInfo.writeRelocationPointer(relocationInfoPointer, relocationPointer);
+        }
+
+        if (chunk.getShouldSweepInsteadOfCompact()) {
+            RelocationInfo.visit(chunk, sweepingVisitor);
+            chunk.setShouldSweepInsteadOfCompact(false);
+
+            // Reset allocation pointer as we want to resume after the swept memory.
+            this.chunk = chunk;
+            this.allocationPointer = HeapChunk.getTopPointer(chunk);
         }
 
         return true;
