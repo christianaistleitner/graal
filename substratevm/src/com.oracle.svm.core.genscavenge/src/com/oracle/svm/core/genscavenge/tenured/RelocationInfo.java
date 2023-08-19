@@ -28,6 +28,7 @@ import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
 import com.oracle.svm.core.genscavenge.HeapChunk;
 import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
+import com.oracle.svm.core.genscavenge.remset.BrickTable;
 import com.oracle.svm.core.heap.ObjectVisitor;
 import com.oracle.svm.core.heap.RestrictHeapAccess;
 import com.oracle.svm.core.hub.LayoutEncoding;
@@ -168,7 +169,7 @@ public class RelocationInfo {
             return WordFactory.nullPointer(); // object didn't survive
         }
 
-        Pointer relocationInfo = AlignedHeapChunk.getObjectsStart(chunk);
+        Pointer relocationInfo = BrickTable.getEntry(chunk, BrickTable.getIndex(chunk, p));
         Pointer nextRelocationInfo = RelocationInfo.getNextRelocationInfo(relocationInfo);
         while (nextRelocationInfo.isNonNull() && nextRelocationInfo.belowOrEqual(p)) {
             relocationInfo = nextRelocationInfo;
