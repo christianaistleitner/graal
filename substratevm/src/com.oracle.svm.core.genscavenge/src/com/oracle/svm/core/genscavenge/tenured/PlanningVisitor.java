@@ -36,6 +36,7 @@ import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
 import com.oracle.svm.core.genscavenge.HeapChunk;
 import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
 import com.oracle.svm.core.genscavenge.Space;
+import com.oracle.svm.core.genscavenge.remset.BrickTable;
 import com.oracle.svm.core.hub.LayoutEncoding;
 import com.oracle.svm.core.log.Log;
 
@@ -69,12 +70,16 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
         UnsignedWord gapSize =  WordFactory.zero();
         UnsignedWord plugSize =  WordFactory.zero();
 
+        UnsignedWord brick = WordFactory.zero();
+
         /*
          * Write the first relocation info just before objects start.
          */
         RelocationInfo.writeRelocationPointer(relocationInfoPointer, allocationPointer);
         RelocationInfo.writeGapSize(relocationInfoPointer, 0);
         RelocationInfo.writeNextPlugOffset(relocationInfoPointer, 0);
+
+        BrickTable.setEntry(chunk, brick, relocationInfoPointer);
 
         Log.noopLog().string("Wrote first relocation info at ").zhex(relocationInfoPointer)
                 .string(": relocationPointer=").zhex(allocationPointer)
@@ -150,6 +155,15 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
                             .newline().flush();
 
                     plugSize = WordFactory.zero();
+
+                    /*
+                     * Update brick table entry.
+                     */
+                    UnsignedWord currentBrick = BrickTable.getIndex(chunk, cursor);
+                    while (brick.belowThan(currentBrick)) {
+                        brick = brick.add(1);
+                        BrickTable.setEntry(chunk, brick, relocationInfoPointer);
+                    }
                 }
 
                 gapSize = gapSize.add(objSize);
@@ -201,6 +215,27 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
             chunk.setShouldSweepInsteadOfCompact(false);
             this.chunk = chunk;
             this.allocationPointer = HeapChunk.getTopPointer(chunk);
+
+            /*
+             * Update brick table entries after sweep.
+             */
+            brick = WordFactory.zero();
+            Pointer objectsStart = AlignedHeapChunk.getObjectsStart(chunk);
+            while (brick.belowThan(BrickTable.getLength())) {
+                BrickTable.setEntry(chunk, brick, objectsStart);
+                brick = brick.add(1);
+            }
+
+            return true;
+        }
+
+        /*
+         * Update remaining brick table entries at chunk end.
+         */
+        brick = brick.add(1);
+        while (brick.belowThan(BrickTable.getLength())) {
+            BrickTable.setEntry(chunk, brick, relocationInfoPointer);
+            brick = brick.add(1);
         }
 
         return true;
