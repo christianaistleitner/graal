@@ -176,7 +176,15 @@ public final class OldGeneration extends Generation {
         timers.tenuredFixingAlignedChunks.close();
 
         timers.tenuredFixingImageHeap.open();
-        HeapImpl.getHeapImpl().walkImageHeapObjects(fixingVisitor);
+        for (ImageHeapInfo info = HeapImpl.getFirstImageHeapInfo(); info != null; info = info.next) {
+            GCImpl.walkImageHeapRoots(info, fixingVisitor);
+        }
+        if (AuxiliaryImageHeap.isPresent()) {
+            ImageHeapInfo auxImageHeapInfo = AuxiliaryImageHeap.singleton().getImageHeapInfo();
+            if (auxImageHeapInfo != null) {
+                GCImpl.walkImageHeapRoots(auxImageHeapInfo, fixingVisitor);
+            }
+        }
         timers.tenuredFixingImageHeap.close();
 
         timers.tenuredFixingThreadLocal.open();
