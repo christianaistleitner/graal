@@ -33,8 +33,10 @@ import org.graalvm.word.WordFactory;
 
 import com.oracle.svm.core.AlwaysInline;
 import com.oracle.svm.core.NeverInline;
+import com.oracle.svm.core.Uninterruptible;
 import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
 import com.oracle.svm.core.genscavenge.HeapChunk;
+import com.oracle.svm.core.genscavenge.HeapParameters;
 import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
 import com.oracle.svm.core.genscavenge.Space;
 import com.oracle.svm.core.genscavenge.remset.BrickTable;
@@ -42,7 +44,7 @@ import com.oracle.svm.core.hub.LayoutEncoding;
 
 public class PlanningVisitor implements AlignedHeapChunk.Visitor {
 
-    private final SweepingVisitor sweepingVisitor = new SweepingVisitor();
+    private static final SweepPreparingVisitor SWEEP_PREPARING_VISITOR = new SweepPreparingVisitor();
 
     private AlignedHeapChunk.AlignedHeader chunk;
 
@@ -69,6 +71,7 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
         UnsignedWord plugSize =  WordFactory.zero();
 
         UnsignedWord brick = WordFactory.zero();
+        UnsignedWord fragmentation = WordFactory.zero();
 
         /*
          * Write the first relocation info just before objects start.
@@ -109,6 +112,7 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
                     RelocationInfo.writeGapSize(relocationInfoPointer, (int) gapSize.rawValue());
                     RelocationInfo.writeNextPlugOffset(relocationInfoPointer, 0);
 
+                    fragmentation = fragmentation.add(gapSize);
                     gapSize = WordFactory.zero();
                 }
 
@@ -156,25 +160,23 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
             RelocationInfo.writeRelocationPointer(relocationInfoPointer, relocationPointer);
         }
 
+        /*
+         * Sweep chunk instead of compacting on low fragmentation as the freed memory isn't worth the effort.
+         */
+        fragmentation = fragmentation.add(HeapChunk.getEndOffset(chunk).subtract(HeapChunk.getTopOffset(chunk)));
+        if (shouldSweepBasedOnFragmentation(fragmentation)) {
+            chunk.setShouldSweepInsteadOfCompact(true);
+        }
+
+        /*
+         * Prepare for sweeping. Actual sweep will be done in compacting phase.
+         */
         if (chunk.getShouldSweepInsteadOfCompact()) {
-            RelocationInfo.visit(chunk, sweepingVisitor);
-            chunk.setShouldSweepInsteadOfCompact(false);
+            RelocationInfo.visit(chunk, SWEEP_PREPARING_VISITOR);
 
             // Reset allocation pointer as we want to resume after the swept memory.
             this.chunk = chunk;
             this.allocationPointer = HeapChunk.getTopPointer(chunk);
-
-            /*
-             * Update brick table entries after sweep.
-             */
-            brick = WordFactory.zero();
-            Pointer objectsStart = AlignedHeapChunk.getObjectsStart(chunk);
-            while (brick.belowThan(BrickTable.getLength())) {
-                BrickTable.setEntry(chunk, brick, objectsStart);
-                brick = brick.add(1);
-            }
-
-            return true;
         }
 
         /*
@@ -200,8 +202,32 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
         return relocationPointer;
     }
 
+    /**
+     * @return {@code true} if {@code 0 < fragmentation ratio < 0.0625}
+     */
+    @AlwaysInline("GC Performance")
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    private static boolean shouldSweepBasedOnFragmentation(UnsignedWord fragmentation) {
+        UnsignedWord limit = HeapParameters.getAlignedHeapChunkSize().unsignedShiftRight(4);
+        return fragmentation.aboveThan(0) && fragmentation.belowThan(limit);
+    }
+
     public void init(Space space) {
         chunk = space.getFirstAlignedHeapChunk();
         allocationPointer = AlignedHeapChunk.getObjectsStart(chunk);
+    }
+
+    private static class SweepPreparingVisitor implements RelocationInfo.Visitor {
+
+            @Override
+            public boolean visit(Pointer p) {
+                return visitInline(p);
+            }
+
+            @Override
+            public boolean visitInline(Pointer p) {
+                RelocationInfo.writeRelocationPointer(p, p);
+                return true;
+            }
     }
 }
