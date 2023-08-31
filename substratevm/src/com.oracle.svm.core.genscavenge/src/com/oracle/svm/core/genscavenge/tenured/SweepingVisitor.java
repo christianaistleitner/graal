@@ -52,8 +52,6 @@ public class SweepingVisitor implements RelocationInfo.Visitor {
 
         int size = RelocationInfo.readGapSize(p);
         if (size == 0) {
-            RelocationInfo.writeNextPlugOffset(p, 0);
-            RelocationInfo.writeRelocationPointer(p, p);
             return true;
         }
 
