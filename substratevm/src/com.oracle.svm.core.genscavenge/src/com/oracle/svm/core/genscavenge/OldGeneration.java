@@ -41,6 +41,7 @@ import com.oracle.svm.core.genscavenge.tenured.FixingVisitor;
 import com.oracle.svm.core.genscavenge.tenured.PlanningVisitor;
 import com.oracle.svm.core.genscavenge.tenured.RefFixingVisitor;
 import com.oracle.svm.core.genscavenge.tenured.RelocationInfo;
+import com.oracle.svm.core.genscavenge.tenured.SweepingVisitor;
 import com.oracle.svm.core.graal.RuntimeCompilation;
 import com.oracle.svm.core.thread.VMThreads;
 import com.oracle.svm.core.threadlocal.VMThreadLocalMTSupport;
@@ -75,6 +76,7 @@ public final class OldGeneration extends Generation {
     private final RefFixingVisitor refFixingVisitor = new RefFixingVisitor();
     private final FixingVisitor fixingVisitor = new FixingVisitor(refFixingVisitor);
     private final CompactingVisitor compactingVisitor = new CompactingVisitor();
+    private final SweepingVisitor sweepingVisitor = new SweepingVisitor();
     private final RuntimeCodeCacheWalker runtimeCodeCacheWalker = new RuntimeCodeCacheWalker(refFixingVisitor);
 
     @Platforms(Platform.HOSTED_ONLY.class)
@@ -260,8 +262,13 @@ public final class OldGeneration extends Generation {
             Log.noopLog().string("[OldGeneration.compacting: chunk=").zhex(chunk)
                     .string("]\n").flush();
 
-            compactingVisitor.init(chunk);
-            RelocationInfo.walkObjects(chunk, compactingVisitor);
+            if (chunk.getShouldSweepInsteadOfCompact()) {
+                RelocationInfo.visit(chunk, sweepingVisitor);
+                chunk.setShouldSweepInsteadOfCompact(false);
+            } else {
+                compactingVisitor.init(chunk);
+                RelocationInfo.visit(chunk, compactingVisitor);
+            }
 
             chunk = HeapChunk.getNext(chunk);
         }
