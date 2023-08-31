@@ -32,8 +32,10 @@ import org.graalvm.word.WordFactory;
 
 import com.oracle.svm.core.AlwaysInline;
 import com.oracle.svm.core.NeverInline;
+import com.oracle.svm.core.Uninterruptible;
 import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
 import com.oracle.svm.core.genscavenge.HeapChunk;
+import com.oracle.svm.core.genscavenge.HeapParameters;
 import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
 import com.oracle.svm.core.genscavenge.Space;
 import com.oracle.svm.core.genscavenge.remset.BrickTable;
@@ -42,7 +44,18 @@ import com.oracle.svm.core.log.Log;
 
 public class PlanningVisitor implements AlignedHeapChunk.Visitor {
 
-    private final SweepingVisitor sweepingVisitor = new SweepingVisitor();
+    private final RelocationInfo.Visitor prepareSweepVisitor = new RelocationInfo.Visitor() {
+        @Override
+        public boolean visit(Pointer p) {
+            return visitInline(p);
+        }
+
+        @Override
+        public boolean visitInline(Pointer p) {
+            RelocationInfo.writeRelocationPointer(p, p);
+            return true;
+        }
+    };
 
     private AlignedHeapChunk.AlignedHeader chunk;
 
@@ -71,6 +84,7 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
         UnsignedWord plugSize =  WordFactory.zero();
 
         UnsignedWord brick = WordFactory.zero();
+        UnsignedWord fragmentation = WordFactory.zero();
 
         /*
          * Write the first relocation info just before objects start.
@@ -131,6 +145,7 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
                             .string(": nextPlugOffset=").zhex(0)
                             .newline().flush();
 
+                    fragmentation = fragmentation.add(gapSize);
                     gapSize = WordFactory.zero();
                 }
 
@@ -210,23 +225,13 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
                     .newline().flush();
         }
 
-        if (chunk.getShouldSweepInsteadOfCompact()) {
-            RelocationInfo.visit(chunk, sweepingVisitor);
-            chunk.setShouldSweepInsteadOfCompact(false);
+        fragmentation = fragmentation.add(HeapChunk.getEndOffset(chunk).subtract(HeapChunk.getTopOffset(chunk)));
+
+        if (chunk.getShouldSweepInsteadOfCompact() || shouldSweepBasedOnFragmentation(fragmentation)) {
+            RelocationInfo.visit(chunk, prepareSweepVisitor);
+            chunk.setShouldSweepInsteadOfCompact(true);
             this.chunk = chunk;
             this.allocationPointer = HeapChunk.getTopPointer(chunk);
-
-            /*
-             * Update brick table entries after sweep.
-             */
-            brick = WordFactory.zero();
-            Pointer objectsStart = AlignedHeapChunk.getObjectsStart(chunk);
-            while (brick.belowThan(BrickTable.getLength())) {
-                BrickTable.setEntry(chunk, brick, objectsStart);
-                brick = brick.add(1);
-            }
-
-            return true;
         }
 
         /*
@@ -250,6 +255,16 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
             allocationPointer = relocationPointer.add(size);
         }
         return relocationPointer;
+    }
+
+    /**
+     * @return {@code true} if {@code 0 < fragmentation ratio < 0.0625}
+     */
+    @AlwaysInline("GC Performance")
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    private static boolean shouldSweepBasedOnFragmentation(UnsignedWord fragmentation) {
+        UnsignedWord limit = HeapParameters.getAlignedHeapChunkSize().unsignedShiftRight(4);
+        return fragmentation.aboveThan(0) && fragmentation.belowThan(limit);
     }
 
     public void init(Space space) {
