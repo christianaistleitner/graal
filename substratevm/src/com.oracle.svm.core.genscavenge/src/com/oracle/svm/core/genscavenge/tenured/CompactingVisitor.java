@@ -24,58 +24,53 @@
  */
 package com.oracle.svm.core.genscavenge.tenured;
 
-import org.graalvm.compiler.word.Word;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
-import org.graalvm.word.WordFactory;
 
+import com.oracle.svm.core.AlwaysInline;
+import com.oracle.svm.core.NeverInline;
 import com.oracle.svm.core.UnmanagedMemoryUtil;
 import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
 import com.oracle.svm.core.genscavenge.HeapChunk;
-import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
-import com.oracle.svm.core.heap.ObjectVisitor;
-import com.oracle.svm.core.hub.LayoutEncoding;
-import com.oracle.svm.core.log.Log;
-import com.oracle.svm.core.thread.VMOperation;
 
-public class CompactingVisitor implements ObjectVisitor {
-
-    private Pointer relocationPointer;
-    private Pointer relocationInfoPointer;
-    private Pointer nextRelocationInfoPointer;
+public class CompactingVisitor implements RelocationInfo.Visitor {
 
     private AlignedHeapChunk.AlignedHeader chunk;
 
+    private UnsignedWord top;
+
+    @NeverInline("")
     @Override
-    public boolean visitObject(Object obj) {
-        if (relocationInfoPointer.isNull()) {
-            return false; // no gaps
+    public boolean visit(Pointer p) {
+        return visitInline(p);
+    }
+
+    @AlwaysInline("")
+    @Override
+    public boolean visitInline(Pointer p) {
+        Pointer relocationPointer = RelocationInfo.readRelocationPointer(p);
+        if (relocationPointer.equal(p)) {
+            /*
+             * No copy. Data stays where it's currently located.
+             */
+            return true;
         }
 
-        Pointer objPointer = Word.objectToUntrackedPointer(obj);
-
-        if (nextRelocationInfoPointer.isNonNull() && objPointer.aboveOrEqual(nextRelocationInfoPointer)) {
-            relocationInfoPointer = nextRelocationInfoPointer;
-            nextRelocationInfoPointer = RelocationInfo.getNextRelocationInfo(relocationInfoPointer);
-            relocationPointer = RelocationInfo.readRelocationPointer(relocationInfoPointer);
+        UnsignedWord size = calculatePlugSize(p);
+        if (size.equal(0)) {
+            /*
+             * Gap at chunk start causes a 0 bytes 1st plug.
+             */
+            return true;
         }
 
-        Pointer newLocation = objPointer.subtract(relocationInfoPointer).add(relocationPointer);
-
-        Log.noopLog().string("New relocation")
-                .string(", newLocation=").zhex(newLocation)
-                .string(", objPointer=").zhex(objPointer)
-                .string(", relocationInfoPointer=").zhex(relocationInfoPointer)
-                .string(", relocationPointer=").zhex(relocationPointer)
-                .newline().flush();
-
-        UnsignedWord copySize = copyObject(obj, newLocation);
+        UnmanagedMemoryUtil.copy(p, relocationPointer, size);
 
         // TODO: Find a more elegant way to set the top pointer during/after compaction.
-        AlignedHeapChunk.AlignedHeader newChunk = AlignedHeapChunk.getEnclosingChunkFromObjectPointer(newLocation);
+        AlignedHeapChunk.AlignedHeader newChunk = AlignedHeapChunk.getEnclosingChunkFromObjectPointer(relocationPointer);
         HeapChunk.setTopPointer(
                 newChunk,
-                newLocation.add(copySize)
+                relocationPointer.add(size)
         );
         if (chunk.notEqual(newChunk)) {
             HeapChunk.setTopPointer(
@@ -87,32 +82,22 @@ public class CompactingVisitor implements ObjectVisitor {
         return true;
     }
 
-    public void init(AlignedHeapChunk.AlignedHeader chunk) {
-        this.chunk = chunk;
-        relocationInfoPointer = AlignedHeapChunk.getObjectsStart(chunk);
-        relocationPointer = RelocationInfo.readRelocationPointer(relocationInfoPointer);
-
-        int offset = RelocationInfo.readNextPlugOffset(relocationInfoPointer);
-        if (offset > 0) {
-            nextRelocationInfoPointer = relocationInfoPointer.add(offset);
-        } else {
-            nextRelocationInfoPointer = WordFactory.nullPointer();
+    /**
+     * May return {@code 0} values if there is a gap at chunk start!
+     */
+    @AlwaysInline("GC Performance")
+    private UnsignedWord calculatePlugSize(Pointer relocInfo) {
+        Pointer nextRelocInfo = RelocationInfo.getNextRelocationInfo(relocInfo);
+        if (nextRelocInfo.isNull()) {
+            // Last plug of chunk! Plug size is based on chunk top.
+            return top.subtract(relocInfo);
         }
+        int gap = RelocationInfo.readGapSize(nextRelocInfo);
+        return nextRelocInfo.subtract(gap).subtract(relocInfo);
     }
 
-    /**
-     * @return the number of copied bytes
-     */
-    private UnsignedWord copyObject(Object obj, Pointer dest) {
-        assert VMOperation.isGCInProgress();
-        assert ObjectHeaderImpl.isAlignedObject(obj);
-        assert dest.isNonNull();
-
-        UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj);
-        Pointer src = Word.objectToUntrackedPointer(obj);
-
-        UnmanagedMemoryUtil.copyLongsForward(src, dest, objSize);
-
-        return objSize;
+    public void init(AlignedHeapChunk.AlignedHeader chunk) {
+        this.chunk = chunk;
+        this.top = HeapChunk.getTopPointer(chunk);
     }
 }
