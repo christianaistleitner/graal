@@ -235,13 +235,13 @@ public final class GCImpl implements GC {
         boolean outOfMemory;
         long startTicks = JfrTicks.elapsedTicks();
         try {
-            outOfMemory = doCollectImpl(cause, requestingNanoTime, forceFullGC, false);
+            outOfMemory = doCollectImpl(cause, requestingNanoTime, forceFullGC);
             if (outOfMemory) {
                 // Avoid running out of memory with a full GC that reclaims softly reachable
                 // objects
                 ReferenceObjectProcessing.setSoftReferencesAreWeak(true);
                 try {
-                    outOfMemory = doCollectImpl(cause, requestingNanoTime, true, true);
+                    outOfMemory = doCollectImpl(cause, requestingNanoTime, true);
                 } finally {
                     ReferenceObjectProcessing.setSoftReferencesAreWeak(false);
                 }
@@ -252,10 +252,10 @@ public final class GCImpl implements GC {
         return outOfMemory;
     }
 
-    private boolean doCollectImpl(GCCause cause, long requestingNanoTime, boolean forceFullGC, boolean forceNoIncremental) {
+    private boolean doCollectImpl(GCCause cause, long requestingNanoTime, boolean forceFullGC) {
         CommittedMemoryProvider.get().beforeGarbageCollection();
 
-        boolean incremental = !forceNoIncremental && !policy.shouldCollectCompletely(false);
+        boolean incremental = !forceFullGC && !policy.shouldCollectCompletely(false);
         boolean outOfMemory = false;
 
         if (incremental) {
@@ -266,7 +266,7 @@ public final class GCImpl implements GC {
                 JfrGCEvents.emitGCPhasePauseEvent(getCollectionEpoch(), "Incremental GC", startTicks);
             }
         }
-        if (!incremental || outOfMemory || forceFullGC || policy.shouldCollectCompletely(incremental)) {
+        if (!incremental || outOfMemory || policy.shouldCollectCompletely(incremental)) {
             if (incremental) { // uncommit unaligned chunks
                 CommittedMemoryProvider.get().afterGarbageCollection();
             }
