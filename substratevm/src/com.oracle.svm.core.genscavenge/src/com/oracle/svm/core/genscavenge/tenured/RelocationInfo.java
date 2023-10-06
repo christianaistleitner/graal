@@ -44,30 +44,33 @@ import org.graalvm.word.WordFactory;
  * +-------------------------+---------------+-----------------------+
  * | relocation pointer (8B) | gap size (4B) | next plug offset (4B) |
  * +-------------------------+---------------+-----------------------+
- *                                                                   ^pointer
+ *                                                                   ^p
  * 32-bit mode:
  * +-----------------------------------------------------------------+
- * | TODO                                                            |
+ * | relocation pointer (4B) | gap size (2B) | next plug offset (2B) |
  * +-----------------------------------------------------------------+
- *                                                                   ^pointer
+ *                                                                   ^p
  * </pre>
  */
 public class RelocationInfo {
 
     public static void writeRelocationPointer(Pointer p, Pointer relocationPointer) {
         if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
-            // TODO
-            assert false;
+            long offset = relocationPointer.subtract(p).rawValue();
+            offset /= ConfigurationValues.getObjectLayout().getAlignment();
+            assert offset == (int) offset : "must fit in 4 bytes";
+            p.writeInt(-8, (int) offset);
         } else {
             p.writeWord(-16, relocationPointer);
         }
+        assert readRelocationPointer(p).equal(relocationPointer) : "persistence check";
     }
 
     public static Pointer readRelocationPointer(Pointer p) {
         if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
-            // TODO
-            assert false;
-            return WordFactory.nullPointer();
+            long offset = p.readInt(-8);
+            offset *= ConfigurationValues.getObjectLayout().getAlignment();
+            return p.add(WordFactory.unsigned(offset));
         } else {
             return p.readWord(-16);
         }
@@ -75,18 +78,18 @@ public class RelocationInfo {
 
     public static void writeGapSize(Pointer p, int gapSize) {
         if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
-            // TODO
-            assert false;
+            int data = gapSize / ConfigurationValues.getObjectLayout().getAlignment();
+            assert data == (((short) data) & 0xffff) : "must fit in 2 bytes";
+            p.writeShort(-4, (short) data);
         } else {
             p.writeInt(-8, gapSize);
         }
+        assert readGapSize(p) == gapSize : "persistence check";
     }
 
     public static int readGapSize(Pointer p) {
         if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
-            // TODO
-            assert false;
-            return 0;
+            return (p.readShort(-4) & 0xffff) * ConfigurationValues.getObjectLayout().getAlignment();
         } else {
             return p.readInt(-8);
         }
@@ -94,18 +97,18 @@ public class RelocationInfo {
 
     public static void writeNextPlugOffset(Pointer p, int offset) {
         if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
-            // TODO
-            assert false;
+            int data = offset / ConfigurationValues.getObjectLayout().getAlignment();
+            assert data == (((short) data) & 0xffff) : "must fit in 2 bytes";
+            p.writeShort(-2, (short) data);
         } else {
             p.writeInt(-4, offset);
         }
+        assert readNextPlugOffset(p) == offset : "persistence check";
     }
 
     public static int readNextPlugOffset(Pointer p) {
         if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
-            // TODO
-            assert false;
-            return 0;
+            return (p.readShort(-2) & 0xffff) * ConfigurationValues.getObjectLayout().getAlignment();
         } else {
             return p.readInt(-4);
         }
