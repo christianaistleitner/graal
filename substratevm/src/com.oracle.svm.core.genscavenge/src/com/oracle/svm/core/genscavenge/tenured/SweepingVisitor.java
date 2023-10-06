@@ -24,7 +24,9 @@
  */
 package com.oracle.svm.core.genscavenge.tenured;
 
+import jdk.graal.compiler.core.common.NumUtil;
 import jdk.graal.compiler.word.Word;
+import jdk.vm.ci.meta.JavaKind;
 import org.graalvm.word.Pointer;
 
 import com.oracle.svm.core.AlwaysInline;
@@ -37,6 +39,10 @@ import com.oracle.svm.core.hub.DynamicHub;
 import com.oracle.svm.core.hub.LayoutEncoding;
 
 public class SweepingVisitor implements RelocationInfo.Visitor {
+
+    private static final int ARRAY_OVERHEAD_SIZE = NumUtil.safeToInt(
+            ConfigurationValues.getObjectLayout().getArraySize(JavaKind.Byte, 0, false)
+    );
 
     @NeverInline("")
     @Override
@@ -61,7 +67,7 @@ public class SweepingVisitor implements RelocationInfo.Visitor {
         Word encodedHeader = header.encodeAsUnmanagedObjectHeader(hub);
         header.initializeHeaderOfNewObject(gap, encodedHeader, true);
 
-        int length = size - ConfigurationValues.getObjectLayout().getMinImageHeapArraySize();
+        int length = size - ARRAY_OVERHEAD_SIZE;
         gap.writeInt(ConfigurationValues.getObjectLayout().getArrayLengthOffset(), length);
         assert LayoutEncoding.getSizeFromObjectInGC(gap.toObject()).equal(size);
 

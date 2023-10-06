@@ -29,6 +29,7 @@ import static com.oracle.svm.core.snippets.KnownIntrinsics.readReturnAddress;
 
 import java.lang.ref.Reference;
 
+import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.heap.ObjectReferenceVisitor;
 import com.oracle.svm.core.heap.ObjectVisitor;
 import org.graalvm.nativeimage.CurrentIsolate;
@@ -100,6 +101,7 @@ import com.oracle.svm.core.util.TimeUtils;
 import com.oracle.svm.core.util.VMError;
 
 import jdk.graal.compiler.api.replacements.Fold;
+import jdk.graal.compiler.word.Word;
 
 /**
  * Garbage collector (incremental or complete) for {@link HeapImpl}.
@@ -1077,20 +1079,28 @@ public final class GCImpl implements GC {
     @AlwaysInline("GC performance")
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     @SuppressWarnings("static-method")
-    Object promoteObject(Object original, UnsignedWord header) {
+    Object promoteObject(Object original, Word header) {
         HeapImpl heap = HeapImpl.getHeapImpl();
         boolean isAligned = ObjectHeaderImpl.isAlignedHeader(header);
         Header<?> originalChunk = getChunk(original, isAligned);
         Space originalSpace = HeapChunk.getSpace(originalChunk);
 
         if (completeCollection) {
-            // Mark objects in the old generation and continue depth-first traversal
-            // as referenced objects aren't colored gray by copying!
-            ObjectHeaderImpl.setMarkedBit(original);
-            ObjectHeaderImpl.setRememberedSetBit(original);
-            // TODO: This recursive call will cause stack overflows. The Deutsch-Schorr-Waite algorithm would fix that.
-            markQueue.push(original);
-            return original; // Objects in the old generation cannot be promoted further.
+            if (ObjectHeaderImpl.isIdentityHashFieldOptional() && ObjectHeaderImpl.hasIdentityHashFromAddressInline(header)) {
+                /*
+                 * The object size will increase due to the identity hashcode being persisted as an additional header field.
+                 * Thus, we'll forward the object using OldGeneration#promoteAlignedObject and install the forwarding pointer.
+                 */
+            } else {
+                // Mark objects in the old generation and continue depth-first traversal
+                // as referenced objects aren't colored gray by copying!
+                assert originalSpace.isOldSpace();
+                ObjectHeaderImpl.setMarkedBit(original);
+                ObjectHeaderImpl.setRememberedSetBit(original);
+                // TODO: This recursive call will cause stack overflows. The Deutsch-Schorr-Waite algorithm would fix that.
+                markQueue.push(original);
+                return original; // Objects in the old generation cannot be promoted further.}
+            }
         }
 
         if (!originalSpace.isFromSpace()) {
@@ -1115,6 +1125,14 @@ public final class GCImpl implements GC {
                 result = heap.getOldGeneration().promoteUnalignedObject(original, (UnalignedHeader) originalChunk, originalSpace);
             }
             assert result != null : "promotion failure in old generation must have been handled";
+        }
+
+        if (completeCollection) {
+            ObjectHeaderImpl.setMarkedBit(result);
+            markQueue.push(result);
+            header = ObjectHeaderImpl.readHeaderFromObject(result);
+            assert !ObjectHeaderImpl.hasIdentityHashFromAddressInline(header);
+            assert !ObjectHeaderImpl.hasMarkedBit(original);
         }
 
         return result;
