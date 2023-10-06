@@ -390,12 +390,12 @@ public final class ObjectHeaderImpl extends ObjectHeader {
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
-    Object getForwardedObject(Pointer ptr) {
+    public Object getForwardedObject(Pointer ptr) {
         return getForwardedObject(ptr, readHeaderFromPointer(ptr));
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
-    Object getForwardedObject(Pointer ptr, UnsignedWord header) {
+    public Object getForwardedObject(Pointer ptr, UnsignedWord header) {
         assert isForwardedHeader(header);
         if (ReferenceAccess.singleton().haveCompressedReferences()) {
             if (hasShift()) {
@@ -441,7 +441,7 @@ public final class ObjectHeaderImpl extends ObjectHeader {
         }
 
         assert getHeaderBitsFromHeader(result).equal(0);
-        return result.or(MARKED_OR_FORWARDED_BIT);
+        return result.or(MARKED_OR_FORWARDED_BIT).and(REMEMBERED_SET_BIT.not());
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
