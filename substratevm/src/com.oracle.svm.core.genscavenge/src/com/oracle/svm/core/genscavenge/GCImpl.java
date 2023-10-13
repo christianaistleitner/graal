@@ -32,6 +32,7 @@ import java.lang.ref.Reference;
 import com.oracle.svm.core.heap.ObjectReferenceVisitor;
 import com.oracle.svm.core.heap.ObjectVisitor;
 import jdk.compiler.graal.api.replacements.Fold;
+import org.graalvm.compiler.word.Word;
 import org.graalvm.nativeimage.CurrentIsolate;
 import org.graalvm.nativeimage.IsolateThread;
 import org.graalvm.nativeimage.Platform;
@@ -1073,13 +1074,13 @@ public final class GCImpl implements GC {
     @AlwaysInline("GC performance")
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     @SuppressWarnings("static-method")
-    Object promoteObject(Object original, UnsignedWord header) {
+    Object promoteObject(Object original, Word header) {
         HeapImpl heap = HeapImpl.getHeapImpl();
         boolean isAligned = ObjectHeaderImpl.isAlignedHeader(header);
         Header<?> originalChunk = getChunk(original, isAligned);
         Space originalSpace = HeapChunk.getSpace(originalChunk);
 
-        if (completeCollection) {
+        if (completeCollection && !ObjectHeaderImpl.hasIdentityHashFromAddressInline(header)) {
             // Mark objects in the old generation and continue depth-first traversal
             // as referenced objects aren't colored gray by copying!
             ObjectHeaderImpl.setMarkedBit(original);
@@ -1111,6 +1112,14 @@ public final class GCImpl implements GC {
                 result = heap.getOldGeneration().promoteUnalignedObject(original, (UnalignedHeader) originalChunk, originalSpace);
             }
             assert result != null : "promotion failure in old generation must have been handled";
+        }
+
+        if (completeCollection) {
+            ObjectHeaderImpl.setMarkedBit(result);
+            markQueue.push(result);
+            header = ObjectHeaderImpl.readHeaderFromObject(result);
+            assert !ObjectHeaderImpl.hasIdentityHashFromAddressInline(header);
+            assert !ObjectHeaderImpl.hasMarkedBit(original);
         }
 
         return result;

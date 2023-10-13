@@ -153,4 +153,9 @@ public abstract class ObjectHeader {
     protected static int getHubOffset() {
         return ConfigurationValues.getObjectLayout().getHubOffset();
     }
+
+    @Fold
+    protected static int getForwardPointerOffset() {
+        return ConfigurationValues.getObjectLayout().getHubOffset() + ConfigurationValues.getObjectLayout().getReferenceSize();
+    }
 }

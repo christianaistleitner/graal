@@ -389,30 +389,35 @@ public final class ObjectHeaderImpl extends ObjectHeader {
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     Object getForwardedObject(Pointer ptr, UnsignedWord header) {
         assert isForwardedHeader(header);
-        if (ReferenceAccess.singleton().haveCompressedReferences()) {
-            if (hasShift()) {
-                // References compressed with shift have no bits to spare, so the forwarding
-                // reference is stored separately, after the object header
-                ObjectLayout layout = ConfigurationValues.getObjectLayout();
-                assert layout.isAligned(getHubOffset()) && (2 * getReferenceSize()) <= layout.getAlignment() : "Forwarding reference must fit after hub";
-                int forwardRefOffset = getHubOffset() + getReferenceSize();
-                return ReferenceAccess.singleton().readObjectAt(ptr.add(forwardRefOffset), true);
-            } else {
-                return ReferenceAccess.singleton().uncompressReference(clearBits(header));
-            }
-        } else {
-            return ((Pointer) clearBits(header)).toObject();
-        }
+        return ObjectAccess.readObject(ptr.toObject(), getForwardPointerOffset());
+        // if (ReferenceAccess.singleton().haveCompressedReferences()) {
+        //     if (hasShift()) {
+        //         // References compressed with shift have no bits to spare, so the forwarding
+        //         // reference is stored separately, after the object header
+        //         ObjectLayout layout = ConfigurationValues.getObjectLayout();
+        //         assert layout.isAligned(getHubOffset()) && (2 * getReferenceSize()) <= layout.getAlignment() : "Forwarding reference must fit after hub";
+        //         int forwardRefOffset = getHubOffset() + getReferenceSize();
+        //         return ReferenceAccess.singleton().readObjectAt(ptr.add(forwardRefOffset), true);
+        //     } else {
+        //         return ReferenceAccess.singleton().uncompressReference(clearBits(header));
+        //     }
+        // } else {
+        //     return ((Pointer) clearBits(header)).toObject();
+        // }
     }
 
     /** In an Object, install a forwarding pointer to a different Object. */
-    @AlwaysInline("GC performance")
-    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    @Uninterruptible(reason = "asdf", calleeMustBe = false)
     void installForwardingPointer(Object original, Object copy) {
         assert !isPointerToForwardedObject(Word.objectToUntrackedPointer(original));
-        UnsignedWord forwardHeader = getForwardHeader(copy);
-        ObjectAccess.writeLong(original, getHubOffset(), forwardHeader.rawValue());
+
+        UnsignedWord header = readHeaderFromObject(original);
+        writeHeaderToObject(original, header.or(MARKED_OR_FORWARDED_BIT).and(REMEMBERED_SET_BIT.not()));
+
+        ObjectAccess.writeObject(original, getForwardPointerOffset(), copy);
+
         assert isPointerToForwardedObject(Word.objectToUntrackedPointer(original));
+        assert getForwardedObject(Word.objectToUntrackedPointer(original)) == copy;
     }
 
     @AlwaysInline("GC performance")
@@ -433,7 +438,7 @@ public final class ObjectHeaderImpl extends ObjectHeader {
         }
 
         assert getHeaderBitsFromHeader(result).equal(0);
-        return result.or(MARKED_OR_FORWARDED_BIT);
+        return result.or(MARKED_OR_FORWARDED_BIT).and(REMEMBERED_SET_BIT.not());
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)

@@ -101,8 +101,8 @@ public final class OldGeneration extends Generation {
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     @Override
     public Object promoteAlignedObject(Object original, AlignedHeapChunk.AlignedHeader originalChunk, Space originalSpace) {
-        assert !GCImpl.getGCImpl().isCompleteCollection() : "may only be called during incremental collections";
-        assert originalSpace.isFromSpace() && !originalSpace.isOldSpace();
+        // assert !GCImpl.getGCImpl().isCompleteCollection() : "may only be called during incremental collections";
+        // assert originalSpace.isFromSpace() && !originalSpace.isOldSpace();
 
         return getSpace().promoteAlignedObject(original, originalSpace);
     }

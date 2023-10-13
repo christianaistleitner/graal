@@ -24,6 +24,8 @@
  */
 package com.oracle.svm.core.genscavenge.tenured;
 
+import jdk.vm.ci.meta.JavaKind;
+import org.graalvm.compiler.core.common.NumUtil;
 import org.graalvm.compiler.word.Word;
 import org.graalvm.word.Pointer;
 
@@ -61,7 +63,7 @@ public class SweepingVisitor implements RelocationInfo.Visitor {
         Word encodedHeader = header.encodeAsUnmanagedObjectHeader(hub);
         header.initializeHeaderOfNewObject(gap, encodedHeader);
 
-        int length = size - ConfigurationValues.getObjectLayout().getMinImageHeapArraySize();
+        int length = size - NumUtil.safeToInt(ConfigurationValues.getObjectLayout().getArraySize(JavaKind.Byte, 0, false));
         gap.writeInt(ConfigurationValues.getObjectLayout().getArrayLengthOffset(), length);
         assert LayoutEncoding.getSizeFromObjectInGC(gap.toObject()).equal(size);
 

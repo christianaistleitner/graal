@@ -241,10 +241,6 @@ final class ReferenceObjectProcessing {
         ObjectHeaderImpl ohi = ObjectHeaderImpl.getObjectHeaderImpl();
         UnsignedWord header = ObjectHeader.readHeaderFromPointer(referentAddr);
         if (ObjectHeaderImpl.isForwardedHeader(header)) {
-
-            // TODO: remove
-            assert !isInOldSpace(referentAddr.toObject());
-
             Object forwardedObj = ohi.getForwardedObject(referentAddr);
             ReferenceInternals.setReferent(dr, forwardedObj);
             return true;
