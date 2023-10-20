@@ -24,13 +24,18 @@
  */
 package com.oracle.svm.core.genscavenge.tenured;
 
-import org.graalvm.word.Pointer;
-
+import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
+import com.oracle.svm.core.genscavenge.HeapChunk;
 import com.oracle.svm.core.genscavenge.HeapImpl;
 import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
 import com.oracle.svm.core.genscavenge.remset.RememberedSet;
 import com.oracle.svm.core.heap.ObjectReferenceVisitor;
 import com.oracle.svm.core.heap.ReferenceAccess;
+import com.oracle.svm.core.hub.LayoutEncoding;
+import com.oracle.svm.core.log.Log;
+import jdk.compiler.graal.word.Word;
+import org.graalvm.word.Pointer;
+import org.graalvm.word.UnsignedWord;
 
 import java.lang.ref.Reference;
 

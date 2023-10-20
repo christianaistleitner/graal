@@ -25,8 +25,8 @@
 package com.oracle.svm.core.genscavenge.tenured;
 
 import jdk.vm.ci.meta.JavaKind;
-import org.graalvm.compiler.core.common.NumUtil;
-import org.graalvm.compiler.word.Word;
+import jdk.compiler.graal.core.common.NumUtil;
+import jdk.compiler.graal.word.Word;
 import org.graalvm.word.Pointer;
 
 import com.oracle.svm.core.AlwaysInline;

@@ -32,8 +32,8 @@ import com.oracle.svm.core.snippets.KnownIntrinsics;
 
 import java.lang.ref.Reference;
 
-import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.SLOW_PATH_PROBABILITY;
-import static org.graalvm.compiler.nodes.extended.BranchProbabilityNode.probability;
+import static jdk.compiler.graal.nodes.extended.BranchProbabilityNode.SLOW_PATH_PROBABILITY;
+import static jdk.compiler.graal.nodes.extended.BranchProbabilityNode.probability;
 
 public class FixingVisitor implements ObjectVisitor {
 
