@@ -30,9 +30,11 @@ import com.oracle.svm.core.genscavenge.HeapChunk;
 import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
 import com.oracle.svm.core.genscavenge.remset.BrickTable;
 import com.oracle.svm.core.heap.ObjectVisitor;
+import com.oracle.svm.core.heap.ReferenceAccess;
 import com.oracle.svm.core.heap.RestrictHeapAccess;
 import com.oracle.svm.core.hub.LayoutEncoding;
 
+import com.oracle.svm.core.log.Log;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
 import org.graalvm.word.WordFactory;
@@ -55,7 +57,7 @@ import org.graalvm.word.WordFactory;
 public class RelocationInfo {
 
     public static void writeRelocationPointer(Pointer p, Pointer relocationPointer) {
-        if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
+        if (ReferenceAccess.singleton().haveCompressedReferences()) {
             long offset = relocationPointer.subtract(p).rawValue();
             assert offset == (int) offset : "must fit in 4 bytes";
             p.writeInt(-8, (int) offset);
@@ -66,7 +68,7 @@ public class RelocationInfo {
     }
 
     public static Pointer readRelocationPointer(Pointer p) {
-        if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
+        if (ReferenceAccess.singleton().haveCompressedReferences()) {
             int offset = p.readInt(-8);
             return p.add(offset);
         } else {
@@ -75,7 +77,7 @@ public class RelocationInfo {
     }
 
     public static void writeGapSize(Pointer p, int gapSize) {
-        if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
+        if (ReferenceAccess.singleton().haveCompressedReferences()) {
             int data = gapSize / ConfigurationValues.getObjectLayout().getAlignment();
             assert data == (((short) data) & 0xffff) : "must fit in 2 bytes";
             p.writeShort(-4, (short) data);
@@ -86,7 +88,7 @@ public class RelocationInfo {
     }
 
     public static int readGapSize(Pointer p) {
-        if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
+        if (ReferenceAccess.singleton().haveCompressedReferences()) {
             return (p.readShort(-4) & 0xffff) * ConfigurationValues.getObjectLayout().getAlignment();
         } else {
             return p.readInt(-8);
@@ -94,7 +96,7 @@ public class RelocationInfo {
     }
 
     public static void writeNextPlugOffset(Pointer p, int offset) {
-        if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
+        if (ReferenceAccess.singleton().haveCompressedReferences()) {
             int data = offset / ConfigurationValues.getObjectLayout().getAlignment();
             assert data == (((short) data) & 0xffff) : "must fit in 2 bytes";
             p.writeShort(-2, (short) data);
@@ -105,7 +107,7 @@ public class RelocationInfo {
     }
 
     public static int readNextPlugOffset(Pointer p) {
-        if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
+        if (ReferenceAccess.singleton().haveCompressedReferences()) {
             return (p.readShort(-2) & 0xffff) * ConfigurationValues.getObjectLayout().getAlignment();
         } else {
             return p.readInt(-4);
@@ -130,6 +132,8 @@ public class RelocationInfo {
         Pointer cursor = AlignedHeapChunk.getObjectsStart(chunkHeader);
         Pointer top = HeapChunk.getTopPointer(chunkHeader); // top cannot move in this case
         Pointer relocationInfo = AlignedHeapChunk.getObjectsStart(chunkHeader);
+
+        Log.noopLog().string("Fixing chunk ").zhex(chunkHeader).string(" at top ").zhex(top).newline().flush();
 
         while (cursor.belowThan(top)) {
 
@@ -183,6 +187,43 @@ public class RelocationInfo {
         }
 
         if (nextRelocationInfo.isNonNull() && nextRelocationInfo.subtract(RelocationInfo.readGapSize(nextRelocationInfo)).belowOrEqual(p)) {
+            return WordFactory.nullPointer(); // object didn't survive
+        }
+
+        assert relocationInfo.belowOrEqual(p);
+
+        Pointer relocationPointer = RelocationInfo.readRelocationPointer(relocationInfo);
+        Pointer relocationOffset = p.subtract(relocationInfo);
+
+        return relocationPointer.add(relocationOffset);
+    }
+
+    public static Pointer getRelocatedObjectPointerBackup(Pointer p) {
+        assert ObjectHeaderImpl.isAlignedObject(p.toObject()) : "Unaligned objects are not supported!";
+
+        AlignedHeapChunk.AlignedHeader chunk = AlignedHeapChunk.getEnclosingChunkFromObjectPointer(p);
+
+        Pointer topPointer = HeapChunk.getTopPointer(chunk);
+        if (p.aboveOrEqual(topPointer)) {
+            // Object is located in gap at chunk end.
+            Log.log().string("Object above top pointer")
+                    .string(", chunk=").zhex(chunk)
+                    .string(", top=").zhex(topPointer)
+                    .string(", p=").zhex(p)
+                    .newline().flush();
+            return WordFactory.nullPointer(); // object didn't survive
+        }
+
+        Pointer relocationInfo = AlignedHeapChunk.getObjectsStart(chunk);
+
+        Pointer nextRelocationInfo = RelocationInfo.getNextRelocationInfo(relocationInfo);
+        while (nextRelocationInfo.isNonNull() && nextRelocationInfo.belowOrEqual(p)) {
+            relocationInfo = nextRelocationInfo;
+            nextRelocationInfo = RelocationInfo.getNextRelocationInfo(relocationInfo);
+        }
+
+        if (nextRelocationInfo.isNonNull() && nextRelocationInfo.subtract(RelocationInfo.readGapSize(nextRelocationInfo)).belowOrEqual(p)) {
+            Log.log().string("Object is located in gap.").newline().flush();
             return WordFactory.nullPointer(); // object didn't survive
         }
 

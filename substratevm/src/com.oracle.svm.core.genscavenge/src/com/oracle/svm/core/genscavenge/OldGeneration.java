@@ -258,6 +258,7 @@ public final class OldGeneration extends Generation {
                     .string("]\n").flush();
 
             if (chunk.getShouldSweepInsteadOfCompact()) {
+                Log.log().string("Sweeping ").zhex(chunk).newline().flush();
                 RelocationInfo.visit(chunk, sweepingVisitor);
                 chunk.setShouldSweepInsteadOfCompact(false);
             } else {

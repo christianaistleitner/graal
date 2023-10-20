@@ -24,6 +24,7 @@
  */
 package com.oracle.svm.core.genscavenge;
 
+import com.oracle.svm.core.hub.LayoutEncoding;
 import jdk.compiler.graal.api.directives.GraalDirectives;
 import jdk.compiler.graal.api.replacements.Fold;
 import jdk.compiler.graal.replacements.ReplacementsUtil;
@@ -409,15 +410,20 @@ public final class ObjectHeaderImpl extends ObjectHeader {
     /** In an Object, install a forwarding pointer to a different Object. */
     @Uninterruptible(reason = "asdf", calleeMustBe = false)
     void installForwardingPointer(Object original, Object copy) {
-        assert !isPointerToForwardedObject(Word.objectToUntrackedPointer(original));
+        Word p = Word.objectToUntrackedPointer(original);
+        assert !isPointerToForwardedObject(p);
+
+        UnsignedWord size = LayoutEncoding.getSizeFromObjectInlineInGC(original);
+        UnsignedWord after = p.readWord(size);
 
         UnsignedWord header = readHeaderFromObject(original);
         writeHeaderToObject(original, header.or(MARKED_OR_FORWARDED_BIT).and(REMEMBERED_SET_BIT.not()));
 
         ObjectAccess.writeObject(original, getForwardPointerOffset(), copy);
 
-        assert isPointerToForwardedObject(Word.objectToUntrackedPointer(original));
-        assert getForwardedObject(Word.objectToUntrackedPointer(original)) == copy;
+        assert after.equal(p.readWord(size));
+        assert isPointerToForwardedObject(p);
+        assert getForwardedObject(p) == copy;
     }
 
     @AlwaysInline("GC performance")

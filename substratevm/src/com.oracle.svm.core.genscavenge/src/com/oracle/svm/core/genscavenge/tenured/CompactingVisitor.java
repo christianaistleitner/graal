@@ -24,6 +24,7 @@
  */
 package com.oracle.svm.core.genscavenge.tenured;
 
+import com.oracle.svm.core.log.Log;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
 
@@ -72,11 +73,21 @@ public class CompactingVisitor implements RelocationInfo.Visitor {
                 newChunk,
                 relocationPointer.add(size)
         );
+        Log.noopLog().string("Set top pointer (B)")
+                .string(", chunk=").zhex(newChunk)
+                .string(", top=").zhex(relocationPointer.add(size))
+                .string(", end=").zhex(AlignedHeapChunk.getObjectsEnd(newChunk))
+                .newline().flush();
         if (chunk.notEqual(newChunk)) {
             HeapChunk.setTopPointer(
                     chunk,
                     AlignedHeapChunk.getObjectsStart(chunk)
             );
+            Log.noopLog().string("Set top pointer (C)")
+                    .string(", chunk=").zhex(chunk)
+                    .string(", top=").zhex(AlignedHeapChunk.getObjectsStart(chunk))
+                    .string(", end=").zhex(AlignedHeapChunk.getObjectsEnd(chunk))
+                    .newline().flush();
         }
 
         return true;

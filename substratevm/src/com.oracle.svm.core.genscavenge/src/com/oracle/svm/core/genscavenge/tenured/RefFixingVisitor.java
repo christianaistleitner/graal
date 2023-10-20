@@ -26,6 +26,11 @@ package com.oracle.svm.core.genscavenge.tenured;
 
 import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
 import com.oracle.svm.core.genscavenge.HeapChunk;
+import com.oracle.svm.core.hub.LayoutEncoding;
+import com.oracle.svm.core.log.Log;
+import org.graalvm.compiler.word.Word;
+import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
+import com.oracle.svm.core.genscavenge.HeapChunk;
 import com.oracle.svm.core.genscavenge.HeapImpl;
 import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
 import com.oracle.svm.core.genscavenge.remset.RememberedSet;
@@ -73,6 +78,31 @@ public class RefFixingVisitor implements ObjectReferenceVisitor {
         }
 
         Pointer newLocation = RelocationInfo.getRelocatedObjectPointer(p);
+        if (!(newLocation.isNonNull() || holderObject == null || holderObject instanceof Reference<?>)) {
+
+            AlignedHeapChunk.AlignedHeader c = AlignedHeapChunk.getEnclosingChunkFromObjectPointer(p);
+            Pointer i = HeapChunk.getTopPointer(c);
+            while (i.belowOrEqual(p)) {
+                Object o = i.toObject();
+                UnsignedWord s = LayoutEncoding.getSizeFromObjectInlineInGC(o);
+                Log.log().string("Re-check, Obj ").object(o).string(" of size ")
+                        .unsigned(s).string(" is marked=").bool(ObjectHeaderImpl.hasMarkedBit(o))
+                        .newline().flush();
+                i = i.add(s);
+            }
+
+            Pointer relocatedObjectPointerBackup = RelocationInfo.getRelocatedObjectPointerBackup(p);
+            Word header = ObjectHeaderImpl.readHeaderFromObject(obj);
+            Log.log().string("Didn't find new location of object")
+                    .string(", newLocation=").zhex(newLocation)
+                    .string(", holderObject=").object(holderObject)
+                    .string(", obj=").object(obj)
+                    .string(", marked=").bool(ObjectHeaderImpl.hasMarkedBit(obj))
+                    .string(", forwarded=").bool(ObjectHeaderImpl.isForwardedHeader(header))
+                    .string(", identityHashFromAddress=").bool(ObjectHeaderImpl.hasIdentityHashFromAddressInline(header))
+                    .string(", backup=").zhex(relocatedObjectPointerBackup)
+                    .newline().flush();
+        }
         assert newLocation.isNonNull() || holderObject == null || holderObject instanceof Reference<?>;
 
         Object relocatedObj = newLocation.toObject();

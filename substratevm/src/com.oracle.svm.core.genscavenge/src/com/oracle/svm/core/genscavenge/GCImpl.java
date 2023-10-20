@@ -1071,7 +1071,7 @@ public final class GCImpl implements GC {
     }
 
     @AlwaysInline("GC performance")
-    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    @Uninterruptible(reason = "adsfadf", mayBeInlined = true, calleeMustBe = false)
     @SuppressWarnings("static-method")
     Object promoteObject(Object original, Word header) {
         HeapImpl heap = HeapImpl.getHeapImpl();
@@ -1083,7 +1083,6 @@ public final class GCImpl implements GC {
             // Mark objects in the old generation and continue depth-first traversal
             // as referenced objects aren't colored gray by copying!
             ObjectHeaderImpl.setMarkedBit(original);
-            ObjectHeaderImpl.setRememberedSetBit(original);
             // TODO: This recursive call will cause stack overflows. The Deutsch-Schorr-Waite algorithm would fix that.
             markQueue.push(original);
             return original; // Objects in the old generation cannot be promoted further.
@@ -1119,6 +1118,7 @@ public final class GCImpl implements GC {
             header = ObjectHeaderImpl.readHeaderFromObject(result);
             assert !ObjectHeaderImpl.hasIdentityHashFromAddressInline(header);
             assert !ObjectHeaderImpl.hasMarkedBit(original);
+            Log.noopLog().string("Forwarded ").object(original).string(" to ").object(result).newline().flush();
         }
 
         return result;

@@ -24,6 +24,8 @@
  */
 package com.oracle.svm.core.genscavenge.tenured;
 
+import com.oracle.svm.core.heap.ReferenceAccess;
+import com.oracle.svm.core.log.Log;
 import jdk.compiler.graal.word.Word;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
@@ -41,6 +43,9 @@ import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
 import com.oracle.svm.core.genscavenge.Space;
 import com.oracle.svm.core.genscavenge.remset.BrickTable;
 import com.oracle.svm.core.hub.LayoutEncoding;
+
+import java.util.HashMap;
+import java.util.Map;
 
 public class PlanningVisitor implements AlignedHeapChunk.Visitor {
 
@@ -65,10 +70,11 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
     public boolean visitChunkInline(AlignedHeapChunk.AlignedHeader chunk) {
         Pointer cursor = AlignedHeapChunk.getObjectsStart(chunk);
         Pointer top = HeapChunk.getTopPointer(chunk); // top can't move here, therefore it's fine to read once
+        Pointer newTop = WordFactory.nullPointer();
 
         Pointer relocationInfoPointer = AlignedHeapChunk.getObjectsStart(chunk);
-        UnsignedWord gapSize =  WordFactory.zero();
-        UnsignedWord plugSize =  WordFactory.zero();
+        UnsignedWord gapSize = WordFactory.zero();
+        UnsignedWord plugSize = WordFactory.zero();
 
         UnsignedWord brick = WordFactory.zero();
         UnsignedWord fragmentation = WordFactory.zero();
@@ -83,12 +89,18 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
         BrickTable.setEntry(chunk, brick, relocationInfoPointer);
 
         while (cursor.belowThan(top)) {
-            Word header = ObjectHeaderImpl.readHeaderFromPointer(cursor);
             Object obj = cursor.toObject();
 
             UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj);
 
-            if (ObjectHeaderImpl.hasMarkedBit(obj)) {
+            Word header = ObjectHeaderImpl.readHeaderFromObject(obj);
+            if (obj instanceof Map.Entry<?,?>) {
+                Log.log().string("Obj ").object(obj)
+                        .string(" has marked=").bool(ObjectHeaderImpl.hasMarkedBit(header))
+                        .newline().flush();
+            }
+
+            if (ObjectHeaderImpl.hasMarkedBit(header)) {
                 ObjectHeaderImpl.clearMarkedBit(obj);
 
                 /*
@@ -99,6 +111,8 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
                 assert !ObjectHeaderImpl.hasIdentityHashFromAddressInline(header);
 
                 if (gapSize.notEqual(0)) {
+
+                    // Log.log().string("Plug at ").zhex(cursor).newline().flush();
 
                     /*
                      * Update previous relocation info or set the chunk's "FirstRelocationInfo" pointer.
@@ -136,6 +150,8 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
                         brick = brick.add(1);
                         BrickTable.setEntry(chunk, brick, relocationInfoPointer);
                     }
+
+                    newTop = cursor;
                 }
 
                 gapSize = gapSize.add(objSize);
@@ -153,7 +169,17 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
          * Check for a gap at chunk end that requires updating the chunk top offset to clear that memory.
          */
         if (gapSize.notEqual(0)) {
-            chunk.setTopOffset(chunk.getTopOffset().subtract(gapSize));
+            HeapChunk.setTopPointer(chunk, cursor.subtract(gapSize));
+            //HeapChunk.setTopPointer(chunk, newTop);
+            //chunk.setTopOffset(chunk.getTopOffset().subtract(gapSize));
+            Log.log().string("Set top pointer (A)")
+                    .string(", chunk=").zhex(chunk)
+                    .string(", top_before=").zhex(top)
+                    .string(", top_after=").zhex(HeapChunk.getTopPointer(chunk))
+                    .string(", end=").zhex(AlignedHeapChunk.getObjectsEnd(chunk))
+                    .string(", gapSize=").unsigned(gapSize)
+                    .string(", newTop=").zhex(newTop)
+                    .newline().flush();
         }
 
         if (plugSize.notEqual(0)) {

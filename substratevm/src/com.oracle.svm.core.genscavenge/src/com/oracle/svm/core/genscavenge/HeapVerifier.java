@@ -254,6 +254,11 @@ public final class HeapVerifier {
             return false;
         }
 
+        if (ObjectHeaderImpl.hasMarkedBit(header)) {
+            Log.log().string("Object ").zhex(ptr).string(" has a marked header: ").zhex(header).newline();
+            return false;
+        }
+
         if (HeapImpl.usesImageHeapChunks() || !HeapImpl.getHeapImpl().isInImageHeap(obj)) {
             assert aChunk.isNonNull() ^ uChunk.isNonNull();
             HeapChunk.Header<?> expectedChunk = aChunk.isNonNull() ? aChunk : uChunk;
