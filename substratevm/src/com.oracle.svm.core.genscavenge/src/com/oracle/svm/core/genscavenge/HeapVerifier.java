@@ -238,6 +238,11 @@ public final class HeapVerifier {
             return false;
         }
 
+        if (ObjectHeaderImpl.hasMarkedBit(header)) {
+            Log.log().string("Object ").zhex(ptr).string(" has a marked header: ").zhex(header).newline();
+            return false;
+        }
+
         assert aChunk.isNonNull() ^ uChunk.isNonNull();
         HeapChunk.Header<?> chunk = aChunk.isNonNull() ? aChunk : uChunk;
         if (CommittedMemoryProvider.get().guaranteesHeapPreferredAddressSpaceAlignment()) {
