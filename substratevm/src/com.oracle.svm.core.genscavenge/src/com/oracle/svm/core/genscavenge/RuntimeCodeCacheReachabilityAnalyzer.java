@@ -71,12 +71,11 @@ final class RuntimeCodeCacheReachabilityAnalyzer implements ObjectReferenceVisit
 
         ObjectHeaderImpl ohi = ObjectHeaderImpl.getObjectHeaderImpl();
         Word header = ObjectHeader.readHeaderFromPointer(ptrToObj);
-        Space space = HeapChunk.getSpace(HeapChunk.getEnclosingHeapChunk(ptrToObj, header));
-
-        if (ObjectHeaderImpl.isForwardedHeader(header) && !space.isOldSpace()) {
+        if (ObjectHeaderImpl.isForwardedHeader(header) || ObjectHeaderImpl.hasMarkedBit(header)) {
             return true;
         }
 
+        Space space = HeapChunk.getSpace(HeapChunk.getEnclosingHeapChunk(ptrToObj, header));
         if (!space.isFromSpace()) {
             return true;
         }
