@@ -76,7 +76,7 @@ public final class OldGeneration extends Generation {
     private final FixingVisitor fixingVisitor = new FixingVisitor(refFixingVisitor);
     private final CompactingVisitor compactingVisitor = new CompactingVisitor();
     private final SweepingVisitor sweepingVisitor = new SweepingVisitor();
-    private final RuntimeCodeCacheWalker runtimeCodeCacheWalker = new RuntimeCodeCacheWalker(refFixingVisitor);
+    private final RuntimeCodeCacheWalker2 runtimeCodeCacheWalker = new RuntimeCodeCacheWalker2(refFixingVisitor);
 
     @Platforms(Platform.HOSTED_ONLY.class)
     OldGeneration(String name) {
@@ -202,14 +202,6 @@ public final class OldGeneration extends Generation {
         }
         timers.tenuredFixingThreadLocal.close();
 
-        timers.tenuredFixingRuntimeCodeCache.open();
-        refFixingVisitor.debug = true;
-        if (RuntimeCompilation.isEnabled()) {
-            RuntimeCodeInfoMemory.singleton().walkRuntimeMethodsDuringGC(runtimeCodeCacheWalker);
-        }
-        refFixingVisitor.debug = false;
-        timers.tenuredFixingRuntimeCodeCache.close();
-
         /*
          * Fix object references located on the stack.
          */
@@ -217,7 +209,7 @@ public final class OldGeneration extends Generation {
         try {
             Pointer sp = readCallerStackPointer();
             CodePointer ip = readReturnAddress();
-            GCImpl.walkStackRoots(refFixingVisitor, sp, ip);
+            GCImpl.walkStackRoots(refFixingVisitor, sp, ip, !RuntimeCompilation.isEnabled());
         } finally {
             timers.tenuredFixingStack.close();
         }
@@ -253,6 +245,14 @@ public final class OldGeneration extends Generation {
         } finally {
             timers.tenuredFixingUnalignedChunks.close();
         }
+
+        timers.tenuredFixingRuntimeCodeCache.open();
+        refFixingVisitor.debug = false;
+        if (RuntimeCompilation.isEnabled()) {
+            RuntimeCodeInfoMemory.singleton().walkRuntimeMethodsDuringGC(runtimeCodeCacheWalker);
+        }
+        refFixingVisitor.debug = false;
+        timers.tenuredFixingRuntimeCodeCache.close();
     }
 
     void compacting(Timers timers) {
