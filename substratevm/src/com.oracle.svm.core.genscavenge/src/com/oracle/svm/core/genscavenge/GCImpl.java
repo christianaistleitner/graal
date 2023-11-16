@@ -838,7 +838,7 @@ public final class GCImpl implements GC {
             Pointer sp = readCallerStackPointer();
             CodePointer ip = readReturnAddress();
 
-            walkStackRoots(greyToBlackObjRefVisitor, sp, ip);
+            walkStackRoots(greyToBlackObjRefVisitor, sp, ip, true);
         } finally {
             blackenStackRootsTimer.close();
         }
@@ -846,10 +846,10 @@ public final class GCImpl implements GC {
 
     @AlwaysInline("GC performance")
     @Uninterruptible(reason = "Required by called JavaStackWalker methods. We are at a safepoint during GC, so it does not change anything for this method.", mayBeInlined = true)
-    static void walkStackRoots(ObjectReferenceVisitor visitor, Pointer sp, CodePointer ip) {
+    static void walkStackRoots(ObjectReferenceVisitor visitor, Pointer sp, CodePointer ip, boolean visitRuntimeCodeInfo) {
         JavaStackWalk walk = StackValue.get(JavaStackWalk.class);
         JavaStackWalker.initWalk(walk, sp, ip);
-        walkStack(walk, visitor);
+        walkStack(walk, visitor, visitRuntimeCodeInfo);
 
         if (SubstrateOptions.MultiThreaded.getValue()) {
             /*
@@ -867,7 +867,7 @@ public final class GCImpl implements GC {
                     continue;
                 }
                 if (JavaStackWalker.initWalk(walk, vmThread)) {
-                    walkStack(walk, visitor);
+                    walkStack(walk, visitor, visitRuntimeCodeInfo);
                 }
             }
         }
@@ -881,7 +881,7 @@ public final class GCImpl implements GC {
      */
     @AlwaysInline("GC performance")
     @Uninterruptible(reason = "Required by called JavaStackWalker methods. We are at a safepoint during GC, so it does not change anything for this method.", mayBeInlined = true)
-    private static void walkStack(JavaStackWalk walk, ObjectReferenceVisitor visitor) {
+    private static void walkStack(JavaStackWalk walk, ObjectReferenceVisitor visitor, boolean visitRuntimeCodeInfo) {
         assert VMOperation.isGCInProgress() : "This methods accesses a CodeInfo without a tether";
 
         while (true) {
@@ -913,7 +913,7 @@ public final class GCImpl implements GC {
                  */
             }
 
-            if (RuntimeCompilation.isEnabled() && codeInfo != CodeInfoTable.getImageCodeInfo()) {
+            if (RuntimeCompilation.isEnabled() && codeInfo != CodeInfoTable.getImageCodeInfo() && visitRuntimeCodeInfo) {
                 /*
                  * For runtime-compiled code that is currently on the stack, we need to treat all
                  * the references to Java heap objects as strong references. It is important that we
@@ -1090,6 +1090,7 @@ public final class GCImpl implements GC {
         if (completeCollection && !ObjectHeaderImpl.hasIdentityHashFromAddressInline(header)) {
             // Mark objects in the old generation and continue depth-first traversal
             // as referenced objects aren't colored gray by copying!
+            assert originalSpace.isOldSpace();
             ObjectHeaderImpl.setMarkedBit(original);
             ObjectHeaderImpl.setRememberedSetBit(original);
             // TODO: This recursive call will cause stack overflows. The Deutsch-Schorr-Waite algorithm would fix that.
