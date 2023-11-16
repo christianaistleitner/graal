@@ -70,7 +70,7 @@ public class RelocationInfo {
         if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
             long offset = p.readInt(-8);
             offset *= ConfigurationValues.getObjectLayout().getAlignment();
-            return p.add(WordFactory.unsigned(offset));
+            return p.add(WordFactory.signed(offset));
         } else {
             return p.readWord(-16);
         }
