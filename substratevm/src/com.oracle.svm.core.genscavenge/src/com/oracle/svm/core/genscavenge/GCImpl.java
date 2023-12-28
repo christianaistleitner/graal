@@ -489,6 +489,7 @@ public final class GCImpl implements GC {
             }
 
             if (!incremental) {
+                ReferenceObjectProcessing.updateForwardedRefs();
 
                 Timer tenuredPlanningTimer = timers.tenuredPlanning.open();
                 try {
