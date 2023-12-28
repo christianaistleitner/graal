@@ -266,4 +266,23 @@ final class ReferenceObjectProcessing {
         }
         return false;
     }
+
+    static void updateForwardedRefs() {
+        Reference<?> current = rememberedRefsList;
+        rememberedRefsList = null;
+
+        while (current != null) {
+            // Get the next node (the last node has a cyclic reference to self).
+            Reference<?> next = ReferenceInternals.getNextDiscovered(current);
+            assert next != null;
+            next = (next != current) ? next : null;
+
+            Pointer refPointer = ReferenceInternals.getReferentPointer(current);
+            if (maybeUpdateForwardedReference(current, refPointer)) {
+                Log.log().string("DEBUG: found not yet updated forwarded reference in ").object(current).newline().flush();
+            }
+
+            current = next;
+        }
+    }
 }
