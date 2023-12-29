@@ -27,6 +27,7 @@ package com.oracle.svm.core.genscavenge.tenured;
 import com.oracle.svm.core.AlwaysInline;
 import com.oracle.svm.core.NeverInline;
 import com.oracle.svm.core.Uninterruptible;
+import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
 import com.oracle.svm.core.genscavenge.HeapChunk;
 import com.oracle.svm.core.genscavenge.HeapParameters;
@@ -101,7 +102,9 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
                  * but in here, when compacting the tenured space, we expect that there aren't any marked objects
                  * which have their "IdentityHashFromAddress" object header flag set.
                  */
-                assert !ObjectHeaderImpl.hasIdentityHashFromAddressInline(header) || chunk.getShouldSweepInsteadOfCompact();
+                assert !ConfigurationValues.getObjectLayout().isIdentityHashFieldOptional()
+                        || !ObjectHeaderImpl.hasIdentityHashFromAddressInline(header)
+                        || chunk.getShouldSweepInsteadOfCompact();
 
                 if (gapSize.notEqual(0)) {
 
