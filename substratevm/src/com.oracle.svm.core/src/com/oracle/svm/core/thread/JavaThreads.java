@@ -401,7 +401,8 @@ public final class JavaThreads {
         if (GraalDirectives.inIntrinsic()) {
             ReplacementsUtil.dynamicAssert(id != 0 && id == getThreadId(Thread.currentThread()), "ids must match");
         } else {
-            assert id != 0 && id == getThreadId(Thread.currentThread());
+            assert id != 0;
+            assert id == getThreadId(Thread.currentThread());
         }
         return id;
     }
