@@ -29,6 +29,7 @@ import static com.oracle.svm.core.snippets.KnownIntrinsics.readReturnAddress;
 
 import java.lang.ref.Reference;
 
+import com.oracle.svm.core.code.UntetheredCodeInfoAccess;
 import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.heap.ObjectReferenceVisitor;
 import com.oracle.svm.core.heap.ObjectVisitor;
@@ -922,6 +923,9 @@ public final class GCImpl implements GC {
                  * other object references later on.
                  */
                 RuntimeCodeInfoAccess.walkTether(codeInfo, visitor);
+                assert RuntimeCodeCacheReachabilityAnalyzer.isReachable(
+                        Word.objectToUntrackedPointer(UntetheredCodeInfoAccess.getTetherUnsafe(codeInfo))
+                );
             }
 
             if (!JavaStackWalker.continueWalk(walk, queryResult, deoptFrame)) {

@@ -24,6 +24,7 @@
  */
 package com.oracle.svm.core.genscavenge;
 
+import com.oracle.svm.core.Uninterruptible;
 import jdk.graal.compiler.word.Word;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
@@ -63,6 +64,7 @@ final class RuntimeCodeCacheReachabilityAnalyzer implements ObjectReferenceVisit
         return true;
     }
 
+    @Uninterruptible(reason = "Debug", mayBeInlined = true, calleeMustBe = false)
     public static boolean isReachable(Pointer ptrToObj) {
         assert ptrToObj.isNonNull();
         if (HeapImpl.getHeapImpl().isInImageHeap(ptrToObj)) {
@@ -76,7 +78,7 @@ final class RuntimeCodeCacheReachabilityAnalyzer implements ObjectReferenceVisit
         }
 
         Space space = HeapChunk.getSpace(HeapChunk.getEnclosingHeapChunk(ptrToObj, header));
-        if (!space.isFromSpace()) {
+        if (!space.isFromSpace() || (space.isOldSpace() && !GCImpl.getGCImpl().isCompleteCollection())) {
             return true;
         }
 
