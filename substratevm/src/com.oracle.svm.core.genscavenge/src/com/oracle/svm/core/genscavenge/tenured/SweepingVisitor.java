@@ -24,6 +24,10 @@
  */
 package com.oracle.svm.core.genscavenge.tenured;
 
+import com.oracle.svm.core.config.ObjectLayout;
+import com.oracle.svm.core.heap.FillerObject;
+import com.oracle.svm.core.log.Log;
+import com.oracle.svm.core.util.VMError;
 import jdk.graal.compiler.core.common.NumUtil;
 import jdk.graal.compiler.word.Word;
 import jdk.vm.ci.meta.JavaKind;
@@ -40,7 +44,7 @@ import com.oracle.svm.core.hub.LayoutEncoding;
 
 public class SweepingVisitor implements RelocationInfo.Visitor {
 
-    private static final int ARRAY_OVERHEAD_SIZE = NumUtil.safeToInt(
+    private static final int MIN_ARRAY_SIZE = NumUtil.safeToInt(
             ConfigurationValues.getObjectLayout().getArraySize(JavaKind.Byte, 0, false)
     );
 
@@ -53,24 +57,47 @@ public class SweepingVisitor implements RelocationInfo.Visitor {
     @AlwaysInline("")
     @Override
     public boolean visitInline(Pointer p) {
-        DynamicHub hub = SubstrateUtil.cast(byte[].class, DynamicHub.class);
-        assert LayoutEncoding.isArray(hub.getLayoutEncoding());
-
         int size = RelocationInfo.readGapSize(p);
         if (size == 0) {
             return true;
         }
 
         Pointer gap = p.subtract(size);
-
-        ObjectHeader header = Heap.getHeap().getObjectHeader();
-        Word encodedHeader = header.encodeAsUnmanagedObjectHeader(hub);
-        header.initializeHeaderOfNewObject(gap, encodedHeader, true);
-
-        int length = size - ARRAY_OVERHEAD_SIZE;
-        gap.writeInt(ConfigurationValues.getObjectLayout().getArrayLengthOffset(), length);
-        assert LayoutEncoding.getSizeFromObjectInGC(gap.toObject()).equal(size);
+        writeFillerObjectAt(gap, size);
 
         return true;
+    }
+
+    private static void writeFillerObjectAt(Pointer p, int size) {
+        ObjectHeader objectHeader = Heap.getHeap().getObjectHeader();
+        ObjectLayout objectLayout = ConfigurationValues.getObjectLayout();
+
+        if (size >= MIN_ARRAY_SIZE) {
+            Word encodedHeader = objectHeader.encodeAsUnmanagedObjectHeader(
+                    SubstrateUtil.cast(byte[].class, DynamicHub.class)
+            );
+            objectHeader.initializeHeaderOfNewObject(p, encodedHeader, true);
+
+            int baseOffset = objectLayout.getArrayBaseOffset(JavaKind.Byte);
+            int indexShift = objectLayout.getArrayIndexShift(JavaKind.Byte);
+            int length = (size - baseOffset) >> indexShift;
+            p.writeInt(ConfigurationValues.getObjectLayout().getArrayLengthOffset(), length);
+        } else {
+            Word encodedHeader = objectHeader.encodeAsUnmanagedObjectHeader(
+                    SubstrateUtil.cast(FillerObject.class, DynamicHub.class)
+            );
+            objectHeader.initializeHeaderOfNewObject(p, encodedHeader, false);
+        }
+
+        if (LayoutEncoding.getSizeFromObjectInGC(p.toObject()).notEqual(size)) {
+            Log.log().string("DEBUG: filler object size mismatch")
+                    .string(", expected=").signed(size)
+                    .string(", actual=").signed(LayoutEncoding.getSizeFromObjectInGC(p.toObject()))
+                    .newline().flush();
+        }
+        VMError.guarantee(
+                LayoutEncoding.getSizeFromObjectInGC(p.toObject()).equal(size),
+                "Filler object must fill gap completely"
+        );
     }
 }
