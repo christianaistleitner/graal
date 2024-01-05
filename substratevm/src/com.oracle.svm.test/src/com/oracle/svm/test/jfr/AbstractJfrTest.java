@@ -73,8 +73,7 @@ public abstract class AbstractJfrTest {
     }
 
     protected Path createTempJfrFile() throws IOException {
-        long id = new Random().nextLong(0, Long.MAX_VALUE);
-        Path result = File.createTempFile(getClass().getName() + "-" + id, ".jfr").toPath();
+        Path result = File.createTempFile(getClass().getName(), ".jfr").toPath();
         jfrFiles.add(result);
         if (isDebuggingEnabled()) {
             System.out.println("JFR file: " + result);
