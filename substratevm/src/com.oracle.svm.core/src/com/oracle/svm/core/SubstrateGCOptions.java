@@ -88,10 +88,10 @@ public class SubstrateGCOptions {
     public static final RuntimeOptionKey<Boolean> DisableExplicitGC = new NotifyGCRuntimeOptionKey<>(false);
 
     @Option(help = "Print summary GC information after each collection.", type = OptionType.Expert)//
-    public static final RuntimeOptionKey<Boolean> PrintGC = new NotifyGCRuntimeOptionKey<>(false);
+    public static final RuntimeOptionKey<Boolean> PrintGC = new NotifyGCRuntimeOptionKey<>(true);
 
     @Option(help = "Print more information about the heap before and after each collection.", type = OptionType.Expert)//
-    public static final RuntimeOptionKey<Boolean> VerboseGC = new NotifyGCRuntimeOptionKey<>(false);
+    public static final RuntimeOptionKey<Boolean> VerboseGC = new NotifyGCRuntimeOptionKey<>(true);
 
     @Option(help = "Verify the heap before and after each collection.", type = OptionType.Debug)//
     public static final HostedOptionKey<Boolean> VerifyHeap = new HostedOptionKey<>(false);
