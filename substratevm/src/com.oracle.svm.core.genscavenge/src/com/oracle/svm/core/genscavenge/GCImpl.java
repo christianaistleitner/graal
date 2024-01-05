@@ -1091,7 +1091,9 @@ public final class GCImpl implements GC {
         Space originalSpace = HeapChunk.getSpace(originalChunk);
 
         if (completeCollection) {
-            if (ObjectHeaderImpl.isIdentityHashFieldOptional() && ObjectHeaderImpl.hasIdentityHashFromAddressInline(header)) {
+            if (ObjectHeaderImpl.isIdentityHashFieldOptional()
+                    && ObjectHeaderImpl.hasIdentityHashFromAddressInline(header)
+                    && isAligned && !((AlignedHeader)originalChunk).getShouldSweepInsteadOfCompact()) {
                 /*
                  * The object size will increase due to the identity hashcode being persisted as an additional header field.
                  * Thus, we'll forward the object using OldGeneration#promoteAlignedObject and install the forwarding pointer.
