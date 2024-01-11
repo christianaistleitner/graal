@@ -506,24 +506,14 @@ public final class GCImpl implements GC {
 
                 Timer tenuredFixingTimer = timers.tenuredFixing.open();
                 try {
-                    startTicks = JfrGCEvents.startGCPhasePause();
-                    try {
-                        HeapImpl.getHeapImpl().getOldGeneration().fixing(chunkReleaser, timers);
-                    } finally {
-                        JfrGCEvents.emitGCPhasePauseEvent(getCollectionEpoch(), "Tenured Fixing", startTicks);
-                    }
+                    HeapImpl.getHeapImpl().getOldGeneration().fixing(chunkReleaser, timers);
                 } finally {
                     tenuredFixingTimer.close();
                 }
 
                 Timer tenuredCompactingTimer = timers.tenuredCompacting.open();
                 try {
-                    startTicks = JfrGCEvents.startGCPhasePause();
-                    try {
-                        HeapImpl.getHeapImpl().getOldGeneration().compacting(timers);
-                    } finally {
-                        JfrGCEvents.emitGCPhasePauseEvent(getCollectionEpoch(), "Tenured Compacting", startTicks);
-                    }
+                    HeapImpl.getHeapImpl().getOldGeneration().compacting(timers);
                 } finally {
                     tenuredCompactingTimer.close();
                 }
