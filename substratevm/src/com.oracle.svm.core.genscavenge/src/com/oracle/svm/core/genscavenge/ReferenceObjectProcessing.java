@@ -279,10 +279,11 @@ final class ReferenceObjectProcessing {
             Pointer refPointer = ReferenceInternals.getReferentPointer(current);
             if (maybeUpdateForwardedReference(current, refPointer)) {
                 Log.log().string("DEBUG: found not yet updated forwarded reference in ").object(current).newline().flush();
-            }
-            UnsignedWord header = ObjectHeader.readHeaderFromPointer(refPointer);
-            if (!ObjectHeaderImpl.hasMarkedBit(header)) {
-                ReferenceInternals.setReferent(current, null);
+            } else {
+                UnsignedWord header = ObjectHeader.readHeaderFromPointer(refPointer);
+                if (!ObjectHeaderImpl.hasMarkedBit(header)) {
+                    ReferenceInternals.setReferent(current, null);
+                }
             }
 
             current = next;
