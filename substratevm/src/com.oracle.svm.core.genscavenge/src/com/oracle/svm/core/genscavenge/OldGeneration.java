@@ -165,6 +165,7 @@ public final class OldGeneration extends Generation {
     }
 
     @NeverInline("Starting a stack walk in the caller frame.")
+    @Uninterruptible(reason = "Debug", calleeMustBe = false)
     void fixing(ChunkReleaser chunkReleaser, Timers timers) {
         // Phase 2: Fix object references
         timers.tenuredFixingAlignedChunks.open();
