@@ -31,6 +31,11 @@ import java.lang.ref.Reference;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.SoftReference;
 
+import com.oracle.svm.core.genscavenge.tenured.RelocationInfo;
+import com.oracle.svm.core.heap.ReferenceAccess;
+import com.oracle.svm.core.log.Log;
+import jdk.graal.compiler.word.ObjectAccess;
+import jdk.graal.compiler.word.Word;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
 import org.graalvm.word.WordFactory;
@@ -120,7 +125,7 @@ final class ReferenceObjectProcessing {
             return;
         }
         Object refObject = referentAddr.toObject();
-        if (willSurviveThisCollection(refObject)) {
+        if (isInToSpace(refObject)) {
             // Referent is in a to-space. So, this is either an object that got promoted without
             // being moved or an object in the old gen.
             RememberedSet.get().dirtyCardIfNecessary(dr, refObject);
@@ -137,7 +142,7 @@ final class ReferenceObjectProcessing {
                 // Important: we need to pass the reference object as holder so that the remembered
                 // set can be updated accordingly!
                 refVisitor.visitObjectReference(ReferenceInternals.getReferentFieldAddress(dr), true, dr);
-                return; // referent will survive and referent field has been updated
+                return; // referent will survive
             }
         }
 
@@ -201,13 +206,22 @@ final class ReferenceObjectProcessing {
      */
     private static boolean processRememberedRef(Reference<?> dr) {
         Pointer refPointer = ReferenceInternals.getReferentPointer(dr);
-        assert refPointer.isNonNull() : "Referent is null: should not have been discovered";
+
+        if (refPointer.isNull()) {
+            assert GCImpl.getGCImpl().isCompleteCollection() : "Referent is null: should not have been discovered";
+            return false; // Referent has not survived and was set to null during tenured space garbage collection.
+        }
+
         assert !HeapImpl.getHeapImpl().isInImageHeap(refPointer) : "Image heap referent: should not have been discovered";
+        Object refObject = refPointer.toObject();
+
+        if (isInOldSpace(refObject)) {
+            return true;
+        }
         if (maybeUpdateForwardedReference(dr, refPointer)) {
             return true;
         }
-        Object refObject = refPointer.toObject();
-        if (willSurviveThisCollection(refObject)) {
+        if (isInToSpace(refObject)) {
             RememberedSet.get().dirtyCardIfNecessary(dr, refObject);
             return true;
         }
@@ -235,9 +249,44 @@ final class ReferenceObjectProcessing {
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
-    private static boolean willSurviveThisCollection(Object obj) {
+    private static boolean isInToSpace(Object obj) {
         HeapChunk.Header<?> chunk = HeapChunk.getEnclosingHeapChunk(obj);
         Space space = HeapChunk.getSpace(chunk);
-        return !space.isFromSpace();
+        return space != null && !space.isFromSpace();
+    }
+
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    static boolean isInOldSpace(Object obj) {
+        if (obj != null) {
+            HeapChunk.Header<?> chunk = HeapChunk.getEnclosingHeapChunk(obj);
+            Space space = HeapChunk.getSpace(chunk);
+            if (space != null) {
+                return space.isOldSpace();
+            }
+        }
+        return false;
+    }
+
+    static void updateForwardedRefs() {
+        Reference<?> current = rememberedRefsList;
+
+        while (current != null) {
+            // Get the next node (the last node has a cyclic reference to self).
+            Reference<?> next = ReferenceInternals.getNextDiscovered(current);
+            assert next != null;
+            next = (next != current) ? next : null;
+
+            Pointer refPointer = ReferenceInternals.getReferentPointer(current);
+            if (maybeUpdateForwardedReference(current, refPointer)) {
+                Log.log().string("DEBUG: found not yet updated forwarded reference in ").object(current).newline().flush();
+            } else {
+                UnsignedWord header = ObjectHeader.readHeaderFromPointer(refPointer);
+                if (!ObjectHeaderImpl.hasMarkedBit(header)) {
+                    ReferenceInternals.setReferent(current, null);
+                }
+            }
+
+            current = next;
+        }
     }
 }

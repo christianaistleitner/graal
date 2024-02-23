@@ -37,6 +37,7 @@ import com.oracle.svm.core.heap.ObjectReferenceVisitor;
 import com.oracle.svm.core.heap.ReferenceAccess;
 import com.oracle.svm.core.hub.LayoutEncoding;
 import com.oracle.svm.core.log.Log;
+import com.oracle.svm.core.snippets.KnownIntrinsics;
 
 /**
  * This visitor is handed <em>Pointers to Object references</em> and if necessary it promotes the
@@ -103,8 +104,14 @@ final class GreyToBlackObjRefVisitor implements ObjectReferenceVisitor {
                 return true;
             }
 
-            // Promote the Object if necessary, making it at least grey, and ...
             Object obj = p.toObject();
+            if (ObjectHeaderImpl.hasMarkedBit(header)) {
+                // We already visited that object.
+                RememberedSet.get().dirtyCardIfNecessary(holderObject, obj);
+                return true;
+            }
+
+            // Promote the Object if necessary, making it at least grey, and ...
             assert innerOffset < LayoutEncoding.getSizeFromObjectInGC(obj).rawValue();
             Object copy = GCImpl.getGCImpl().promoteObject(obj, header);
             if (copy != obj) {

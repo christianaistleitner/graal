@@ -375,10 +375,14 @@ public final class Space {
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     Object promoteAlignedObject(Object original, Space originalSpace) {
         assert ObjectHeaderImpl.isAlignedObject(original);
-        assert this != originalSpace && originalSpace.isFromSpace();
+        // assert this != originalSpace && originalSpace.isFromSpace();
 
         Object copy = copyAlignedObject(original);
         if (copy != null) {
+            // We mustn't install forwarding pointers in old generation space
+            // as we reuse the FORWARDED flag bit for the MARKED flag for marking alive objects.
+            // assert !originalSpace.isOldSpace() : "Forwarding pointers aren't allowed in old generation space";
+
             ObjectHeaderImpl.getObjectHeaderImpl().installForwardingPointer(original, copy);
         }
         return copy;
@@ -502,6 +506,17 @@ public final class Space {
             appendUnalignedHeapChunk(uChunk);
             uChunk = next;
         }
+    }
+
+    boolean walkAlignedHeapChunks(AlignedHeapChunk.Visitor visitor) {
+        AlignedHeapChunk.AlignedHeader chunk = getFirstAlignedHeapChunk();
+        while (chunk.isNonNull()) {
+            if (!visitor.visitChunkInline(chunk)) {
+                return false;
+            }
+            chunk = HeapChunk.getNext(chunk);
+        }
+        return true;
     }
 
     /**
