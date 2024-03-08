@@ -28,6 +28,7 @@ import static jdk.graal.compiler.nodes.extended.BranchProbabilityNode.SLOW_PATH_
 import static jdk.graal.compiler.nodes.extended.BranchProbabilityNode.VERY_SLOW_PATH_PROBABILITY;
 import static jdk.graal.compiler.nodes.extended.BranchProbabilityNode.probability;
 
+import com.oracle.svm.core.heap.GC;
 import org.graalvm.nativeimage.IsolateThread;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
@@ -422,7 +423,7 @@ public final class Space {
             ObjectAccess.writeInt(copy, offset, value, IdentityHashCodeSupport.IDENTITY_HASHCODE_LOCATION);
             ObjectHeaderImpl.getObjectHeaderImpl().setIdentityHashInField(copy);
         }
-        if (isOldSpace()) {
+        if (isOldSpace() && !(SerialGCOptions.compactingOldGen() && GCImpl.getGCImpl().isCompleteCollection())) {
             // If the object was promoted to the old gen, we need to take care of the remembered
             // set bit and the first object table (even when promoting from old to old).
             AlignedHeapChunk.AlignedHeader copyChunk = AlignedHeapChunk.getEnclosingChunk(copy);

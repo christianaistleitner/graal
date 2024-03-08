@@ -372,18 +372,6 @@ public final class OldGeneration extends Generation {
             space.absorb(youngGeneration.getSurvivorToSpaceAt(i));
         }
 
-        AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
-        while (aChunk.isNonNull()) {
-            RememberedSet.get().enableRememberedSetForChunk(aChunk);
-            aChunk = HeapChunk.getNext(aChunk);
-        }
-
-        UnalignedHeapChunk.UnalignedHeader uChunk = space.getFirstUnalignedHeapChunk();
-        while (uChunk.isNonNull()) {
-            RememberedSet.get().enableRememberedSetForChunk(uChunk);
-            uChunk = HeapChunk.getNext(uChunk);
-        }
-
         // Postcondition: No chunks remain in young generation.
         assert youngGeneration.getEden().isEmpty() : "Eden space must be empty";
         for (int i = 0; i < youngGeneration.getMaxSurvivorSpaces(); i++) {
