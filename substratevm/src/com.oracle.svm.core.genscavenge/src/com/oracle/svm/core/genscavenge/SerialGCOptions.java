@@ -106,6 +106,9 @@ public final class SerialGCOptions {
     @Option(help = "Ignore the maximum heap size while a VM operation is executed.", type = OptionType.Expert)//
     public static final HostedOptionKey<Boolean> IgnoreMaxHeapSizeWhileInVMOperation = new HostedOptionKey<>(false, SerialGCOptions::serialGCOnly);
 
+    @Option(help = "Compacting old generation.", type = OptionType.Expert)
+    public static final HostedOptionKey<Boolean> CompactingOldGen = new HostedOptionKey<>(true, SerialGCOptions::serialGCOnly); // TODO: change default value to false
+
     private SerialGCOptions() {
     }
 
