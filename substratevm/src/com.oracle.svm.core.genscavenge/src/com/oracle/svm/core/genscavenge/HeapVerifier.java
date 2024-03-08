@@ -117,7 +117,7 @@ public final class HeapVerifier {
          * reasonable state. Now, we can verify the remembered sets without having to worry about
          * basic heap consistency.
          */
-        if (!SubstrateOptions.useRememberedSet() || !SerialGCOptions.VerifyRememberedSet.getValue()) {
+        if (!SerialAndEpsilonGCOptions.useRememberedSet() || !SerialGCOptions.VerifyRememberedSet.getValue()) {
             return true;
         }
 
@@ -292,7 +292,7 @@ public final class HeapVerifier {
             // we can't verify that this bit is set.
 
         } else if (space.isOldSpace()) {
-            if (SubstrateOptions.useRememberedSet() && !RememberedSet.get().hasRememberedSet(header)) {
+            if (SerialAndEpsilonGCOptions.useRememberedSet() && !RememberedSet.get().hasRememberedSet(header)) {
                 Log.log().string("Object ").zhex(ptr).string(" is in old generation chunk ").zhex(chunk).string(" but does not have a remembered set.").newline();
                 return false;
             }
