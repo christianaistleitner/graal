@@ -24,17 +24,15 @@
  */
 package com.oracle.svm.core.genscavenge.remset;
 
-import jdk.graal.compiler.api.replacements.Fold;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
-import org.graalvm.word.WordFactory;
 
 import com.oracle.svm.core.Uninterruptible;
 import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
 import com.oracle.svm.core.genscavenge.HeapChunk;
-import com.oracle.svm.core.genscavenge.HeapParameters;
-import com.oracle.svm.core.util.UnsignedUtils;
+
+import jdk.graal.compiler.api.replacements.Fold;
 
 /**
  * Inspired by the .NET CoreCLR, the {@link BrickTable} speeds up relocation pointer lookups
@@ -45,62 +43,57 @@ import com.oracle.svm.core.util.UnsignedUtils;
  */
 public class BrickTable {
 
+    public static final int ENTRY_SIZE_BYTES = 2;
+
     /**
      * We reuse the {@link CardTable}'s memory and double the covered bytes as we need 2 bytes per entry.
      */
-    public static final int BYTES_COVERED_BY_ENTRY = CardTable.BYTES_COVERED_BY_ENTRY * 2;
+    public static final int BYTES_COVERED_BY_ENTRY = CardTable.BYTES_COVERED_BY_ENTRY * ENTRY_SIZE_BYTES;
 
     /**
      * @return The table index whose entry covers the given object pointer.
      */
-    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    @Uninterruptible(reason = Uninterruptible.CALLED_FROM_UNINTERRUPTIBLE_CODE, mayBeInlined = true)
     public static UnsignedWord getIndex(AlignedHeapChunk.AlignedHeader chunk, Pointer pointer) {
         Pointer objectsStart = AlignedHeapChunk.getObjectsStart(chunk);
         UnsignedWord index = pointer.subtract(objectsStart).unsignedDivide(BYTES_COVERED_BY_ENTRY);
-        assert index.aboveOrEqual(0) && index.belowThan(getLength()) : "Index out of range";
+        assert index.aboveOrEqual(0) && index.belowThan(getLength()) : "index out of range";
         return index;
     }
 
     @Fold
     public static UnsignedWord getLength() {
-        UnsignedWord memoryCovered = UnsignedUtils.roundUp(
-                HeapParameters.getAlignedHeapChunkSize().subtract(AlignedHeapChunk.getObjectsStartOffset()),
-                WordFactory.unsigned(BYTES_COVERED_BY_ENTRY)
-        );
-        return memoryCovered.unsignedDivide(BYTES_COVERED_BY_ENTRY);
+        UnsignedWord bytesCovered = AlignedHeapChunk.getSizeUsableForObjects();
+        UnsignedWord length = bytesCovered.add(BYTES_COVERED_BY_ENTRY - 1).unsignedDivide(BYTES_COVERED_BY_ENTRY);
+        assert length.multiply(ENTRY_SIZE_BYTES).belowThan(AlignedChunkRememberedSet.getCardTableSize()) : "brick table size does not match card table size";
+        return length;
     }
 
     /**
      * @return A pointer to the nearest {@link com.oracle.svm.core.genscavenge.tenured.RelocationInfo}.
      */
-    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    @Uninterruptible(reason = Uninterruptible.CALLED_FROM_UNINTERRUPTIBLE_CODE, mayBeInlined = true)
     public static Pointer getEntry(AlignedHeapChunk.AlignedHeader chunk, UnsignedWord index) {
-        Pointer chunkStart = HeapChunk.asPointer(chunk);
-        Pointer tableStart = chunkStart.add(AlignedChunkRememberedSet.getFirstObjectTableStartOffset());
-
-        short entry = tableStart.readShort(index.shiftLeft(1));
-
-        assert ConfigurationValues.getObjectLayout().getAlignment() == 8;
-        int offset = (entry & 0xffff) << 3;
-
-        return chunkStart.add(offset);
+        short entry = getBrickTableStart(chunk).readShort(index.multiply(ENTRY_SIZE_BYTES));
+        int offset = (entry & 0xffff) * ConfigurationValues.getObjectLayout().getAlignment();
+        return HeapChunk.asPointer(chunk).add(offset);
     }
 
     /**
      * @param pointer The pointer to the nearest {@link com.oracle.svm.core.genscavenge.tenured.RelocationInfo}.
      */
-    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    @Uninterruptible(reason = Uninterruptible.CALLED_FROM_UNINTERRUPTIBLE_CODE, mayBeInlined = true)
     public static void setEntry(AlignedHeapChunk.AlignedHeader chunk, UnsignedWord index, Pointer pointer) {
-        Pointer chunkStart = HeapChunk.asPointer(chunk);
-        Pointer tableStart = chunkStart.add(AlignedChunkRememberedSet.getFirstObjectTableStartOffset());
-        UnsignedWord offset = pointer.subtract(chunkStart);
+        UnsignedWord offset = pointer.subtract(HeapChunk.asPointer(chunk));
+        long alignment = ConfigurationValues.getObjectLayout().getAlignment();
+        short entry = (short) (offset.rawValue() / alignment);
+        assert (entry & 0xffff) * alignment == offset.rawValue() : "value overflow";
+        getBrickTableStart(chunk).writeShort(index.multiply(ENTRY_SIZE_BYTES), entry);
+        assert getEntry(chunk, index).equal(pointer) : "serialization failure";
+    }
 
-        assert ConfigurationValues.getObjectLayout().getAlignment() == 8;
-        short entry = (short) (offset.rawValue() >>> 3);
-        assert (entry & 0xffff) == offset.rawValue() >>> 3 : "value overflow";
-
-        tableStart.writeShort(index.shiftLeft(1), entry);
-
-        assert getEntry(chunk, index).equal(pointer) : "Serialization failure";
+    @Uninterruptible(reason = Uninterruptible.CALLED_FROM_UNINTERRUPTIBLE_CODE, mayBeInlined = true)
+    private static Pointer getBrickTableStart(AlignedHeapChunk.AlignedHeader chunk) {
+        return HeapChunk.asPointer(chunk).add(AlignedChunkRememberedSet.getCardTableStartOffset());
     }
 }
