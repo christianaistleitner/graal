@@ -108,6 +108,12 @@ public final class AlignedHeapChunk {
         return HeapChunk.getEndPointer(that);
     }
 
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    public static UnsignedWord getSizeUsableForObjects() {
+        // TODO: This assumes that all aligned heap chunks are of equal size
+        return HeapParameters.getAlignedHeapChunkSize().subtract(getObjectsStartOffset());
+    }
+
     /** Allocate uninitialized memory within this AlignedHeapChunk. */
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     static Pointer allocateMemory(AlignedHeader that, UnsignedWord size) {
