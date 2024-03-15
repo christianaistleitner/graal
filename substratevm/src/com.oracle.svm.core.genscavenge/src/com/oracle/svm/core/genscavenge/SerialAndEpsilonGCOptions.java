@@ -92,10 +92,6 @@ public final class SerialAndEpsilonGCOptions {
 
     @Fold
     public static boolean useRememberedSet() {
-        boolean useRememberedSet = !SubstrateOptions.UseEpsilonGC.getValue() && ConcealedOptions.UseRememberedSet.getValue();
-        if (SerialGCOptions.CompactingOldGen.getValue() && !useRememberedSet) {
-            throw UserError.abort(SubstrateOptionsParser.commandArgument(SerialGCOptions.CompactingOldGen, "+") + " requires " + SubstrateOptionsParser.commandArgument(ConcealedOptions.UseRememberedSet, "+"));
-        }
-        return useRememberedSet;
+        return !SubstrateOptions.UseEpsilonGC.getValue() && ConcealedOptions.UseRememberedSet.getValue();
     }
 }

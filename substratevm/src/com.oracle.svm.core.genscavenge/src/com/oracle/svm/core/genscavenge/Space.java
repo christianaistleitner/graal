@@ -423,7 +423,7 @@ public final class Space {
             ObjectAccess.writeInt(copy, offset, value, IdentityHashCodeSupport.IDENTITY_HASHCODE_LOCATION);
             ObjectHeaderImpl.getObjectHeaderImpl().setIdentityHashInField(copy);
         }
-        if (isOldSpace() && !(SerialGCOptions.CompactingOldGen.getValue() && GCImpl.getGCImpl().isCompleteCollection())) {
+        if (isOldSpace() && !(SerialGCOptions.compactingOldGen() && GCImpl.getGCImpl().isCompleteCollection())) {
             // If the object was promoted to the old gen, we need to take care of the remembered
             // set bit and the first object table (even when promoting from old to old).
             AlignedHeapChunk.AlignedHeader copyChunk = AlignedHeapChunk.getEnclosingChunk(copy);
