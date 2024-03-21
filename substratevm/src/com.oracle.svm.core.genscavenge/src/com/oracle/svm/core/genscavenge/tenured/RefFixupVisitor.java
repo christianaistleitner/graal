@@ -34,9 +34,7 @@ import com.oracle.svm.core.heap.ReferenceAccess;
 
 import java.lang.ref.Reference;
 
-public class RefFixingVisitor implements ObjectReferenceVisitor {
-
-    public boolean debug = false;
+public class RefFixupVisitor implements ObjectReferenceVisitor {
 
     @Override
     public boolean visitObjectReference(Pointer objRef, boolean compressed, Object holderObject) {

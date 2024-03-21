@@ -203,7 +203,7 @@ final class ReferenceObjectProcessing {
         Pointer refPointer = ReferenceInternals.getReferentPointer(dr);
 
         if (refPointer.isNull()) {
-            assert GCImpl.getGCImpl().isCompleteCollection() : "Referent is null: should not have been discovered";
+            assert GCImpl.getGCImpl().isCompleteCollection() : "Referent is null: should not have been discovered in incremental collection";
             return false; // Referent has not survived and was set to null during tenured space garbage collection.
         }
 
@@ -251,7 +251,7 @@ final class ReferenceObjectProcessing {
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
-    static boolean isInOldSpace(Object obj) {
+    private static boolean isInOldSpace(Object obj) {
         if (obj != null) {
             HeapChunk.Header<?> chunk = HeapChunk.getEnclosingHeapChunk(obj);
             Space space = HeapChunk.getSpace(chunk);

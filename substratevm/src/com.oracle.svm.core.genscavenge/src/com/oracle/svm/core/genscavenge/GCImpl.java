@@ -494,7 +494,7 @@ public final class GCImpl implements GC {
                 try {
                     startTicks = JfrGCEvents.startGCPhasePause();
                     try {
-                        HeapImpl.getHeapImpl().getOldGeneration().planning();
+                        HeapImpl.getHeapImpl().getOldGeneration().planCompaction();
                     } finally {
                         JfrGCEvents.emitGCPhasePauseEvent(getCollectionEpoch(), "Tenured Planning", startTicks);
                     }
@@ -504,14 +504,14 @@ public final class GCImpl implements GC {
 
                 Timer tenuredFixingTimer = timers.tenuredFixing.open();
                 try {
-                    HeapImpl.getHeapImpl().getOldGeneration().fixing(chunkReleaser, timers);
+                    HeapImpl.getHeapImpl().getOldGeneration().fixupReferencesBeforeCompaction(chunkReleaser, timers);
                 } finally {
                     tenuredFixingTimer.close();
                 }
 
                 Timer tenuredCompactingTimer = timers.tenuredCompacting.open();
                 try {
-                    HeapImpl.getHeapImpl().getOldGeneration().compacting(timers);
+                    HeapImpl.getHeapImpl().getOldGeneration().compact(timers);
                 } finally {
                     tenuredCompactingTimer.close();
                 }
@@ -1095,7 +1095,6 @@ public final class GCImpl implements GC {
                 assert originalSpace.isOldSpace();
                 ObjectHeaderImpl.setMarkedBit(original);
                 ObjectHeaderImpl.setRememberedSetBit(original);
-                // TODO: This recursive call will cause stack overflows. The Deutsch-Schorr-Waite algorithm would fix that.
                 markQueue.push(original);
                 return original; // Objects in the old generation cannot be promoted further.}
             }
@@ -1157,7 +1156,7 @@ public final class GCImpl implements GC {
                  * As we are using the Mark-and-Compact approach for complete collections,
                  * we have to make sure that the contained chunk is swept instead of compacted.
                  */
-                heap.getOldGeneration().pinObject(referent, originalChunk, isAligned);
+                heap.getOldGeneration().markPinnedObject(referent, originalChunk, isAligned);
                 return;
             }
 

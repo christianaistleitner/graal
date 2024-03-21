@@ -37,10 +37,10 @@ import java.lang.ref.Reference;
 
 public class FixingVisitor implements ObjectVisitor {
 
-    private final RefFixingVisitor refFixingVisitor;
+    private final RefFixupVisitor refFixupVisitor;
 
-    public FixingVisitor(RefFixingVisitor refFixingVisitor) {
-        this.refFixingVisitor = refFixingVisitor;
+    public FixingVisitor(RefFixupVisitor refFixupVisitor) {
+        this.refFixupVisitor = refFixupVisitor;
     }
 
     @Override
@@ -49,9 +49,9 @@ public class FixingVisitor implements ObjectVisitor {
         if (probability(SLOW_PATH_PROBABILITY, hub.isReferenceInstanceClass())) {
             // fixes Target_java_lang_ref_Reference.referent
             Reference<?> dr = (Reference<?>) obj;
-            refFixingVisitor.visitObjectReference(ReferenceInternals.getReferentFieldAddress(dr), true, dr);
+            refFixupVisitor.visitObjectReference(ReferenceInternals.getReferentFieldAddress(dr), true, dr);
         }
-        InteriorObjRefWalker.walkObjectInline(obj, refFixingVisitor);
+        InteriorObjRefWalker.walkObjectInline(obj, refFixupVisitor);
         return true;
     }
 }

@@ -35,7 +35,7 @@ import com.oracle.svm.core.code.RuntimeCodeInfoMemory;
 import com.oracle.svm.core.genscavenge.tenured.CompactingVisitor;
 import com.oracle.svm.core.genscavenge.tenured.FixingVisitor;
 import com.oracle.svm.core.genscavenge.tenured.PlanningVisitor;
-import com.oracle.svm.core.genscavenge.tenured.RefFixingVisitor;
+import com.oracle.svm.core.genscavenge.tenured.RefFixupVisitor;
 import com.oracle.svm.core.genscavenge.tenured.RelocationInfo;
 import com.oracle.svm.core.genscavenge.tenured.SweepingVisitor;
 import com.oracle.svm.core.graal.RuntimeCompilation;
@@ -68,11 +68,11 @@ public final class OldGeneration extends Generation {
 
     private final GreyObjectsWalker toGreyObjectsWalker = new GreyObjectsWalker();
     private final PlanningVisitor planningVisitor = new PlanningVisitor();
-    private final RefFixingVisitor refFixingVisitor = new RefFixingVisitor();
-    private final FixingVisitor fixingVisitor = new FixingVisitor(refFixingVisitor);
+    private final RefFixupVisitor refFixupVisitor = new RefFixupVisitor();
+    private final FixingVisitor fixingVisitor = new FixingVisitor(refFixupVisitor);
     private final CompactingVisitor compactingVisitor = new CompactingVisitor();
     private final SweepingVisitor sweepingVisitor = new SweepingVisitor();
-    private final RuntimeCodeCacheWalker2 runtimeCodeCacheWalker = new RuntimeCodeCacheWalker2(refFixingVisitor);
+    private final RuntimeCodeCacheWalker2 runtimeCodeCacheWalker = new RuntimeCodeCacheWalker2(refFixupVisitor);
 
     @Platforms(Platform.HOSTED_ONLY.class)
     OldGeneration(String name) {
@@ -140,7 +140,7 @@ public final class OldGeneration extends Generation {
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
-    void pinObject(Object obj, HeapChunk.Header<?> chunk, boolean isAligned) {
+    void markPinnedObject(Object obj, HeapChunk.Header<?> chunk, boolean isAligned) {
         assert GCImpl.getGCImpl().isCompleteCollection() : "may only be called during complete collections";
         assert HeapChunk.getSpace(chunk) == space : "object must already reside in tenured space";
 
@@ -153,22 +153,18 @@ public final class OldGeneration extends Generation {
         GCImpl.getGCImpl().getMarkQueue().push(obj);
     }
 
-    void planning() {
+    void planCompaction() {
         // Phase 1: Compute and write relocation info
         planningVisitor.init(space);
         space.walkAlignedHeapChunks(planningVisitor);
     }
 
     @NeverInline("Starting a stack walk in the caller frame.")
-    @Uninterruptible(reason = "Debug", calleeMustBe = false)
-    void fixing(ChunkReleaser chunkReleaser, Timers timers) {
+    void fixupReferencesBeforeCompaction(ChunkReleaser chunkReleaser, Timers timers) {
         // Phase 2: Fix object references
         timers.tenuredFixingAlignedChunks.open();
         AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
         while (aChunk.isNonNull()) {
-            Log.noopLog().string("[OldGeneration.fixing: fixing phase, chunk=").zhex(aChunk)
-                    .string(", top=").zhex(HeapChunk.getTopPointer(aChunk))
-                    .string("]").newline().flush();
             RelocationInfo.walkObjects(aChunk, fixingVisitor);
             aChunk = HeapChunk.getNext(aChunk);
         }
@@ -191,7 +187,7 @@ public final class OldGeneration extends Generation {
             Timer walkThreadLocalsTimer = timers.walkThreadLocals.open();
             try {
                 for (IsolateThread isolateThread = VMThreads.firstThread(); isolateThread.isNonNull(); isolateThread = VMThreads.nextThread(isolateThread)) {
-                    VMThreadLocalSupport.singleton().walk(isolateThread, refFixingVisitor);
+                    VMThreadLocalSupport.singleton().walk(isolateThread, refFixupVisitor);
                 }
             } finally {
                 walkThreadLocalsTimer.close();
@@ -206,7 +202,7 @@ public final class OldGeneration extends Generation {
         try {
             Pointer sp = readCallerStackPointer();
             CodePointer ip = readReturnAddress();
-            GCImpl.walkStackRoots(refFixingVisitor, sp, ip, !RuntimeCompilation.isEnabled());
+            GCImpl.walkStackRoots(refFixupVisitor, sp, ip, !RuntimeCompilation.isEnabled());
         } finally {
             timers.tenuredFixingStack.close();
         }
@@ -226,9 +222,6 @@ public final class OldGeneration extends Generation {
                     ObjectHeaderImpl.clearMarkedBit(obj);
                     RememberedSet.get().clearRememberedSet(uChunk);
 
-                    Log.noopLog().string("[OldGeneration.fixing: fixing phase, chunk=").zhex(uChunk)
-                            .string(", unaligned]").newline().flush();
-
                     UnalignedHeapChunk.walkObjectsInline(uChunk, fixingVisitor);
 
                     UnsignedWord objSize = LayoutEncoding.getSizeFromObjectInlineInGC(obj);
@@ -244,21 +237,17 @@ public final class OldGeneration extends Generation {
         }
 
         timers.tenuredFixingRuntimeCodeCache.open();
-        refFixingVisitor.debug = false;
         if (RuntimeCompilation.isEnabled()) {
             RuntimeCodeInfoMemory.singleton().walkRuntimeMethodsDuringGC(runtimeCodeCacheWalker);
         }
-        refFixingVisitor.debug = false;
         timers.tenuredFixingRuntimeCodeCache.close();
     }
 
-    void compacting(Timers timers) {
+    void compact(Timers timers) {
         // Phase 3: Copy objects to their new location
         timers.tenuredCompactingChunks.open();
         AlignedHeapChunk.AlignedHeader chunk = space.getFirstAlignedHeapChunk();
         while (chunk.isNonNull()) {
-            Log.noopLog().string("[OldGeneration.compacting: chunk=").zhex(chunk)
-                    .string("]\n").flush();
 
             if (chunk.getShouldSweepInsteadOfCompact()) {
                 RelocationInfo.visit(chunk, sweepingVisitor);
@@ -275,10 +264,6 @@ public final class OldGeneration extends Generation {
         chunk = space.getFirstAlignedHeapChunk();
         timers.tenuredCompactingUpdatingRemSet.open();
         while (chunk.isNonNull()) {
-            Log.noopLog().string("[OldGeneration.compacting: chunk=").zhex(chunk)
-                    .string(", top=").zhex(HeapChunk.getTopPointer(chunk))
-                    .string(", done]\n").flush();
-
             // clear CardTable and update FirstObjectTable
             // TODO: Build the FirstObjectTable during compaction.
             RememberedSet.get().enableRememberedSetForChunk(chunk);
@@ -297,7 +282,6 @@ public final class OldGeneration extends Generation {
                 // Release the empty aligned chunk.
                 space.extractAlignedHeapChunk(aChunk);
                 chunkReleaser.add(aChunk);
-                Log.noopLog().string("[OldGeneration.releaseSpaces: chunk=").zhex(aChunk).newline().flush();
             }
             aChunk = next;
         }
