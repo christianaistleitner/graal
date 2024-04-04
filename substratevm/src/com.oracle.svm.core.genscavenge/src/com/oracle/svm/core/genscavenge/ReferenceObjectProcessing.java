@@ -120,9 +120,9 @@ final class ReferenceObjectProcessing {
             return;
         }
         Object refObject = referentAddr.toObject();
-        if (isInToSpace(refObject)) {
-            // Referent is in a to-space. So, this is either an object that got promoted without
-            // being moved or an object in the old gen.
+        if (willSurviveThisCollection(refObject)) {
+            // Referent is in a to-space or was marked as reachable by the compacting collector.
+            // So, this is either an object that got promoted without being moved or an object in the old gen.
             RememberedSet.get().dirtyCardIfNecessary(dr, refObject);
             return;
         }
@@ -202,21 +202,25 @@ final class ReferenceObjectProcessing {
     private static boolean processRememberedRef(Reference<?> dr) {
         Pointer refPointer = ReferenceInternals.getReferentPointer(dr);
 
-        if (refPointer.isNull()) {
-            assert GCImpl.getGCImpl().isCompleteCollection() : "Referent is null: should not have been discovered in incremental collection";
-            return false; // Referent has not survived and was set to null during tenured space garbage collection.
+        if (SerialGCOptions.compactingOldGen() && GCImpl.getGCImpl().isCompleteCollection()) {
+            if (refPointer.isNull()) {
+                assert GCImpl.getGCImpl().isCompleteCollection() : "Referent is null: should not have been discovered in incremental collection";
+                return false; // Referent has not survived and was set to null during tenured space garbage collection.
+            } else {
+                assert !ObjectHeaderImpl.isPointerToForwardedObject(refPointer);
+                return true;
+            }
         }
+
+        assert refPointer.isNonNull() : "Referent is null: should not have been discovered";
 
         assert !HeapImpl.getHeapImpl().isInImageHeap(refPointer) : "Image heap referent: should not have been discovered";
         Object refObject = refPointer.toObject();
 
-        if (isInOldSpace(refObject)) {
-            return true;
-        }
         if (maybeUpdateForwardedReference(dr, refPointer)) {
             return true;
         }
-        if (isInToSpace(refObject)) {
+        if (willSurviveThisCollection(refObject)) {
             RememberedSet.get().dirtyCardIfNecessary(dr, refObject);
             return true;
         }
@@ -244,10 +248,19 @@ final class ReferenceObjectProcessing {
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
-    private static boolean isInToSpace(Object obj) {
+    private static boolean willSurviveThisCollection(Object obj) {
+        if (SerialGCOptions.compactingOldGen()) {
+            if (GCImpl.getGCImpl().isCompleteCollection()) {
+                return ObjectHeaderImpl.hasMarkedBit(obj);
+            } else {
+                HeapChunk.Header<?> chunk = HeapChunk.getEnclosingHeapChunk(obj);
+                Space space = HeapChunk.getSpace(chunk);
+                return !space.isFromSpace() || space.isOldSpace();
+            }
+        }
         HeapChunk.Header<?> chunk = HeapChunk.getEnclosingHeapChunk(obj);
         Space space = HeapChunk.getSpace(chunk);
-        return space != null && !space.isFromSpace();
+        return !space.isFromSpace();
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
