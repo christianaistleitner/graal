@@ -28,7 +28,6 @@ import static jdk.graal.compiler.nodes.extended.BranchProbabilityNode.SLOW_PATH_
 import static jdk.graal.compiler.nodes.extended.BranchProbabilityNode.VERY_SLOW_PATH_PROBABILITY;
 import static jdk.graal.compiler.nodes.extended.BranchProbabilityNode.probability;
 
-import com.oracle.svm.core.heap.GC;
 import org.graalvm.nativeimage.IsolateThread;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;

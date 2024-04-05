@@ -24,6 +24,9 @@
  */
 package com.oracle.svm.core.genscavenge;
 
+import org.graalvm.nativeimage.Platform;
+import org.graalvm.nativeimage.Platforms;
+
 import com.oracle.svm.core.code.CodeInfo;
 import com.oracle.svm.core.code.CodeInfoAccess;
 import com.oracle.svm.core.code.RuntimeCodeCache.CodeInfoVisitor;
@@ -32,9 +35,8 @@ import com.oracle.svm.core.code.UntetheredCodeInfoAccess;
 import com.oracle.svm.core.genscavenge.tenured.RelocationInfo;
 import com.oracle.svm.core.heap.ObjectReferenceVisitor;
 import com.oracle.svm.core.util.DuplicatedInNativeCode;
+
 import jdk.graal.compiler.word.Word;
-import org.graalvm.nativeimage.Platform;
-import org.graalvm.nativeimage.Platforms;
 
 final class RuntimeCodeCacheWalker2 implements CodeInfoVisitor {
 

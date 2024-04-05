@@ -24,6 +24,10 @@
  */
 package com.oracle.svm.core.genscavenge.tenured;
 
+import org.graalvm.word.Pointer;
+import org.graalvm.word.UnsignedWord;
+import org.graalvm.word.WordFactory;
+
 import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
 import com.oracle.svm.core.genscavenge.HeapChunk;
@@ -32,10 +36,6 @@ import com.oracle.svm.core.genscavenge.remset.BrickTable;
 import com.oracle.svm.core.heap.ObjectVisitor;
 import com.oracle.svm.core.heap.RestrictHeapAccess;
 import com.oracle.svm.core.hub.LayoutEncoding;
-
-import org.graalvm.word.Pointer;
-import org.graalvm.word.UnsignedWord;
-import org.graalvm.word.WordFactory;
 
 /*
  * Binary layout:

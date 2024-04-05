@@ -24,8 +24,6 @@
  */
 package com.oracle.svm.core.genscavenge;
 
-import com.oracle.svm.core.option.SubstrateOptionsParser;
-import jdk.graal.compiler.api.replacements.Fold;
 import org.graalvm.collections.EconomicMap;
 
 import com.oracle.svm.core.SubstrateOptions;
@@ -34,6 +32,7 @@ import com.oracle.svm.core.option.NotifyGCRuntimeOptionKey;
 import com.oracle.svm.core.option.RuntimeOptionKey;
 import com.oracle.svm.core.util.UserError;
 
+import jdk.graal.compiler.api.replacements.Fold;
 import jdk.graal.compiler.options.Option;
 import jdk.graal.compiler.options.OptionKey;
 import jdk.graal.compiler.options.OptionType;

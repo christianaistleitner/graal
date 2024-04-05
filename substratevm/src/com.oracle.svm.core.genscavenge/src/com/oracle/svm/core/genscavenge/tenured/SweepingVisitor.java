@@ -24,23 +24,24 @@
  */
 package com.oracle.svm.core.genscavenge.tenured;
 
-import com.oracle.svm.core.config.ObjectLayout;
-import com.oracle.svm.core.heap.FillerObject;
-import com.oracle.svm.core.log.Log;
-import com.oracle.svm.core.util.VMError;
-import jdk.graal.compiler.core.common.NumUtil;
-import jdk.graal.compiler.word.Word;
-import jdk.vm.ci.meta.JavaKind;
 import org.graalvm.word.Pointer;
 
 import com.oracle.svm.core.AlwaysInline;
 import com.oracle.svm.core.NeverInline;
 import com.oracle.svm.core.SubstrateUtil;
 import com.oracle.svm.core.config.ConfigurationValues;
+import com.oracle.svm.core.config.ObjectLayout;
+import com.oracle.svm.core.heap.FillerObject;
 import com.oracle.svm.core.heap.Heap;
 import com.oracle.svm.core.heap.ObjectHeader;
 import com.oracle.svm.core.hub.DynamicHub;
 import com.oracle.svm.core.hub.LayoutEncoding;
+import com.oracle.svm.core.log.Log;
+import com.oracle.svm.core.util.VMError;
+
+import jdk.graal.compiler.core.common.NumUtil;
+import jdk.graal.compiler.word.Word;
+import jdk.vm.ci.meta.JavaKind;
 
 public class SweepingVisitor implements RelocationInfo.Visitor {
 

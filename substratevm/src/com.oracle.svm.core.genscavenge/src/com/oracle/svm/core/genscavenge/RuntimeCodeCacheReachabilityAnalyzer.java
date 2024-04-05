@@ -24,12 +24,12 @@
  */
 package com.oracle.svm.core.genscavenge;
 
-import com.oracle.svm.core.Uninterruptible;
 import jdk.graal.compiler.word.Word;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
 import org.graalvm.word.Pointer;
 
+import com.oracle.svm.core.Uninterruptible;
 import com.oracle.svm.core.heap.ObjectHeader;
 import com.oracle.svm.core.heap.ObjectReferenceVisitor;
 import com.oracle.svm.core.heap.ReferenceAccess;

@@ -24,6 +24,12 @@
  */
 package com.oracle.svm.core.genscavenge.tenured;
 
+import org.graalvm.nativeimage.Platform;
+import org.graalvm.nativeimage.Platforms;
+import org.graalvm.word.Pointer;
+import org.graalvm.word.UnsignedWord;
+import org.graalvm.word.WordFactory;
+
 import com.oracle.svm.core.AlwaysInline;
 import com.oracle.svm.core.NeverInline;
 import com.oracle.svm.core.Uninterruptible;
@@ -35,12 +41,8 @@ import com.oracle.svm.core.genscavenge.ObjectHeaderImpl;
 import com.oracle.svm.core.genscavenge.Space;
 import com.oracle.svm.core.genscavenge.remset.BrickTable;
 import com.oracle.svm.core.hub.LayoutEncoding;
+
 import jdk.graal.compiler.word.Word;
-import org.graalvm.nativeimage.Platform;
-import org.graalvm.nativeimage.Platforms;
-import org.graalvm.word.Pointer;
-import org.graalvm.word.UnsignedWord;
-import org.graalvm.word.WordFactory;
 
 public class PlanningVisitor implements AlignedHeapChunk.Visitor {
 

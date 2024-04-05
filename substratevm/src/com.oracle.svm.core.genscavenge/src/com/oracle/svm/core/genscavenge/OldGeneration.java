@@ -29,18 +29,6 @@ import static com.oracle.svm.core.snippets.KnownIntrinsics.readReturnAddress;
 import static jdk.graal.compiler.nodes.extended.BranchProbabilityNode.EXTREMELY_SLOW_PATH_PROBABILITY;
 import static jdk.graal.compiler.nodes.extended.BranchProbabilityNode.probability;
 
-import com.oracle.svm.core.NeverInline;
-import com.oracle.svm.core.SubstrateOptions;
-import com.oracle.svm.core.code.RuntimeCodeInfoMemory;
-import com.oracle.svm.core.genscavenge.tenured.CompactingVisitor;
-import com.oracle.svm.core.genscavenge.tenured.FixingVisitor;
-import com.oracle.svm.core.genscavenge.tenured.PlanningVisitor;
-import com.oracle.svm.core.genscavenge.tenured.RefFixupVisitor;
-import com.oracle.svm.core.genscavenge.tenured.RelocationInfo;
-import com.oracle.svm.core.genscavenge.tenured.SweepingVisitor;
-import com.oracle.svm.core.graal.RuntimeCompilation;
-import com.oracle.svm.core.thread.VMThreads;
-import com.oracle.svm.core.threadlocal.VMThreadLocalSupport;
 import org.graalvm.nativeimage.IsolateThread;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
@@ -49,13 +37,25 @@ import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
 
 import com.oracle.svm.core.AlwaysInline;
+import com.oracle.svm.core.NeverInline;
+import com.oracle.svm.core.SubstrateOptions;
 import com.oracle.svm.core.Uninterruptible;
+import com.oracle.svm.core.code.RuntimeCodeInfoMemory;
 import com.oracle.svm.core.genscavenge.GCImpl.ChunkReleaser;
 import com.oracle.svm.core.genscavenge.remset.RememberedSet;
+import com.oracle.svm.core.genscavenge.tenured.CompactingVisitor;
+import com.oracle.svm.core.genscavenge.tenured.FixingVisitor;
+import com.oracle.svm.core.genscavenge.tenured.PlanningVisitor;
+import com.oracle.svm.core.genscavenge.tenured.RefFixupVisitor;
+import com.oracle.svm.core.genscavenge.tenured.RelocationInfo;
+import com.oracle.svm.core.genscavenge.tenured.SweepingVisitor;
+import com.oracle.svm.core.graal.RuntimeCompilation;
 import com.oracle.svm.core.heap.ObjectVisitor;
 import com.oracle.svm.core.hub.LayoutEncoding;
 import com.oracle.svm.core.log.Log;
 import com.oracle.svm.core.thread.VMOperation;
+import com.oracle.svm.core.thread.VMThreads;
+import com.oracle.svm.core.threadlocal.VMThreadLocalSupport;
 import com.oracle.svm.core.util.VMError;
 
 /**
