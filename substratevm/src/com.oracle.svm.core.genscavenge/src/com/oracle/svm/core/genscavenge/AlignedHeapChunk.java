@@ -159,11 +159,6 @@ public final class AlignedHeapChunk {
 
     @Fold
     public static UnsignedWord getObjectsStartOffset() {
-        if (SerialGCOptions.compactingOldGen()) {
-            // Our Mark-and-Compact algorithm requires memory space before the first object
-            // for storing relocation info data during complete collections.
-            return RememberedSet.get().getHeaderSizeOfAlignedChunk().add(RelocationInfo.getSize());
-        }
         return RememberedSet.get().getHeaderSizeOfAlignedChunk();
     }
 
