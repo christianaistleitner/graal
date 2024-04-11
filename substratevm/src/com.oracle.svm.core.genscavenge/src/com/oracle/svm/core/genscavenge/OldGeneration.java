@@ -202,7 +202,7 @@ public final class OldGeneration extends Generation {
         try {
             Pointer sp = readCallerStackPointer();
             CodePointer ip = readReturnAddress();
-            GCImpl.walkStackRoots(refFixupVisitor, sp, ip, !RuntimeCompilation.isEnabled());
+            GCImpl.walkStackRoots(refFixupVisitor, sp, ip, false);
         } finally {
             timers.tenuredFixingStack.close();
         }
