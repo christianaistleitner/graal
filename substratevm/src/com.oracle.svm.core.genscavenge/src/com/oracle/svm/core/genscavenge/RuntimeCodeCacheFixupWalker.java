@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2024, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -38,13 +38,17 @@ import com.oracle.svm.core.util.DuplicatedInNativeCode;
 
 import jdk.graal.compiler.word.Word;
 
-final class RuntimeCodeCacheWalker2 implements CodeInfoVisitor {
+/**
+ * References from the runtime compiled code to the Java heap must be fixed up when compacting the old generation.
+ * It is essential to re-visit all references that were visited in {@link RuntimeCodeCacheWalker} during mark phase.
+ */
+final class RuntimeCodeCacheFixupWalker implements CodeInfoVisitor {
 
-    private final ObjectReferenceVisitor greyToBlackObjectVisitor;
+    private final ObjectReferenceVisitor visitor;
 
     @Platforms(Platform.HOSTED_ONLY.class)
-    RuntimeCodeCacheWalker2(ObjectReferenceVisitor greyToBlackObjectVisitor) {
-        this.greyToBlackObjectVisitor = greyToBlackObjectVisitor;
+    RuntimeCodeCacheFixupWalker(ObjectReferenceVisitor visitor) {
+        this.visitor = visitor;
     }
 
     @Override
@@ -55,40 +59,41 @@ final class RuntimeCodeCacheWalker2 implements CodeInfoVisitor {
         }
 
         Object tether = UntetheredCodeInfoAccess.getTetherUnsafe(codeInfo);
-        // if (HeapImpl.getHeapImpl().isInImageHeap(tether)) {
-        //     return true;
-        // }
-
         if (tether != null && !isReachable(tether)) {
             int state = CodeInfoAccess.getState(codeInfo);
             if (state == CodeInfo.STATE_UNREACHABLE || state == CodeInfo.STATE_READY_FOR_INVALIDATION) {
-                RuntimeCodeInfoAccess.walkObjectFields(codeInfo, greyToBlackObjectVisitor);
+                /*
+                 * The CodeInfo object's state was changed to unreachable or to-be-invalidated during mark phase,
+                 * so we only need to visit references that will be accessed before the unmanaged memory is freed.
+                 */
+                RuntimeCodeInfoAccess.walkObjectFields(codeInfo, visitor);
                 return true;
             }
         }
 
-        RuntimeCodeInfoAccess.walkStrongReferences(codeInfo, greyToBlackObjectVisitor);
-        RuntimeCodeInfoAccess.walkWeakReferences(codeInfo, greyToBlackObjectVisitor);
+        /*
+         * As the tether object survived scavenging, we need to fixup all references.
+         */
+        RuntimeCodeInfoAccess.walkStrongReferences(codeInfo, visitor);
+        RuntimeCodeInfoAccess.walkWeakReferences(codeInfo, visitor);
 
         return true;
     }
 
+    /**
+     * @return {code true} if the object will survive this collection, otherwise {@code false}.
+     */
     public static boolean isReachable(Object tether) {
         if (HeapImpl.getHeapImpl().isInImageHeap(tether)) {
             return true;
         }
 
         Space space = HeapChunk.getSpace(HeapChunk.getEnclosingHeapChunk(tether));
-        if (space == null) {
-            return false;
-        }
-        if (!space.isOldSpace()) {
+        if (space == null || !space.isOldSpace()) {
             return false;
         }
 
         Word ptr = Word.objectToUntrackedPointer(tether);
-        return RelocationInfo.getRelocatedObjectPointer(
-                ptr
-        ).isNonNull();
+        return RelocationInfo.getRelocatedObjectPointer(ptr).isNonNull();
     }
 }

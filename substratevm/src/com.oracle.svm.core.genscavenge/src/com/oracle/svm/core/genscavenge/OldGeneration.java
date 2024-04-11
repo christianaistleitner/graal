@@ -72,7 +72,7 @@ public final class OldGeneration extends Generation {
     private final FixingVisitor fixingVisitor = new FixingVisitor(refFixupVisitor);
     private final CompactingVisitor compactingVisitor = new CompactingVisitor();
     private final SweepingVisitor sweepingVisitor = new SweepingVisitor();
-    private final RuntimeCodeCacheWalker2 runtimeCodeCacheWalker = new RuntimeCodeCacheWalker2(refFixupVisitor);
+    private final RuntimeCodeCacheFixupWalker runtimeCodeCacheFixupWalker = new RuntimeCodeCacheFixupWalker(refFixupVisitor);
 
     @Platforms(Platform.HOSTED_ONLY.class)
     OldGeneration(String name) {
@@ -238,7 +238,7 @@ public final class OldGeneration extends Generation {
 
         timers.tenuredFixingRuntimeCodeCache.open();
         if (RuntimeCompilation.isEnabled()) {
-            RuntimeCodeInfoMemory.singleton().walkRuntimeMethodsDuringGC(runtimeCodeCacheWalker);
+            RuntimeCodeInfoMemory.singleton().walkRuntimeMethodsDuringGC(runtimeCodeCacheFixupWalker);
         }
         timers.tenuredFixingRuntimeCodeCache.close();
     }
