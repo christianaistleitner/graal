@@ -33,7 +33,6 @@ import org.graalvm.word.WordFactory;
 import com.oracle.svm.core.AlwaysInline;
 import com.oracle.svm.core.Uninterruptible;
 import com.oracle.svm.core.genscavenge.remset.RememberedSet;
-import com.oracle.svm.core.genscavenge.tenured.RelocationInfo;
 import com.oracle.svm.core.heap.ObjectVisitor;
 import com.oracle.svm.core.heap.RestrictHeapAccess;
 import com.oracle.svm.core.util.PointerUtils;

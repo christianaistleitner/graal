@@ -157,7 +157,7 @@ public class RelocationInfo {
      * @return {@code true} if the relocation info must fit into 8 bytes.
      */
     @Fold
-    private static boolean useCompressedLayout() {
+    static boolean useCompressedLayout() {
         return ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES;
     }
 
