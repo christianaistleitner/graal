@@ -34,7 +34,6 @@ import com.oracle.svm.core.code.RuntimeCodeInfoAccess;
 import com.oracle.svm.core.code.UntetheredCodeInfoAccess;
 import com.oracle.svm.core.genscavenge.tenured.RelocationInfo;
 import com.oracle.svm.core.heap.ObjectReferenceVisitor;
-import com.oracle.svm.core.util.DuplicatedInNativeCode;
 
 import jdk.graal.compiler.word.Word;
 
@@ -52,7 +51,6 @@ final class RuntimeCodeCacheFixupWalker implements CodeInfoVisitor {
     }
 
     @Override
-    @DuplicatedInNativeCode
     public boolean visitCode(CodeInfo codeInfo) {
         if (RuntimeCodeInfoAccess.areAllObjectsOnImageHeap(codeInfo)) {
             return true;

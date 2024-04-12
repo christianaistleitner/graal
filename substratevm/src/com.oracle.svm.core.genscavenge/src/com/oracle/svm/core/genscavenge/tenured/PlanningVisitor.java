@@ -31,7 +31,6 @@ import org.graalvm.word.UnsignedWord;
 import org.graalvm.word.WordFactory;
 
 import com.oracle.svm.core.AlwaysInline;
-import com.oracle.svm.core.NeverInline;
 import com.oracle.svm.core.Uninterruptible;
 import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
@@ -57,7 +56,6 @@ public class PlanningVisitor implements AlignedHeapChunk.Visitor {
     }
 
     @Override
-    @NeverInline("Non-performance critical version")
     public boolean visitChunk(AlignedHeapChunk.AlignedHeader chunk) {
         return visitChunkInline(chunk);
     }

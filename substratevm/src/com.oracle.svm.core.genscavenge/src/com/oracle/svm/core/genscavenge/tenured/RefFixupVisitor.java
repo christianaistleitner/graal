@@ -41,9 +41,6 @@ public class RefFixupVisitor implements ObjectReferenceVisitor {
         return visitObjectReferenceInline(objRef, 0, compressed, holderObject);
     }
 
-    /**
-     * @param objRef Pointer to Pointer
-     */
     @Override
     public boolean visitObjectReferenceInline(Pointer objRef, int innerOffset, boolean compressed, Object holderObject) {
         assert innerOffset == 0; // Will always be 0.

@@ -27,7 +27,6 @@ package com.oracle.svm.core.genscavenge.tenured;
 import org.graalvm.word.Pointer;
 
 import com.oracle.svm.core.AlwaysInline;
-import com.oracle.svm.core.NeverInline;
 import com.oracle.svm.core.SubstrateUtil;
 import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.config.ObjectLayout;
@@ -49,13 +48,12 @@ public class SweepingVisitor implements RelocationInfo.Visitor {
             ConfigurationValues.getObjectLayout().getArraySize(JavaKind.Byte, 0, false)
     );
 
-    @NeverInline("")
     @Override
     public boolean visit(Pointer p) {
         return visitInline(p);
     }
 
-    @AlwaysInline("")
+    @AlwaysInline("GC performance")
     @Override
     public boolean visitInline(Pointer p) {
         int size = RelocationInfo.readGapSize(p);

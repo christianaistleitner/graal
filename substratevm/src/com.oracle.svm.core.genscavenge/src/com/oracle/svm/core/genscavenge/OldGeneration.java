@@ -153,12 +153,14 @@ public final class OldGeneration extends Generation {
         GCImpl.getGCImpl().getMarkQueue().push(obj);
     }
 
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     void planCompaction() {
         // Phase 1: Compute and write relocation info
         planningVisitor.init(space);
         space.walkAlignedHeapChunks(planningVisitor);
     }
 
+    @Uninterruptible(reason = "Required by called JavaStackWalker methods.")
     @NeverInline("Starting a stack walk in the caller frame.")
     void fixupReferencesBeforeCompaction(ChunkReleaser chunkReleaser, Timers timers) {
         // Phase 2: Fix object references
@@ -243,6 +245,7 @@ public final class OldGeneration extends Generation {
         timers.tenuredFixingRuntimeCodeCache.close();
     }
 
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     void compact(Timers timers) {
         // Phase 3: Copy objects to their new location
         timers.tenuredCompactingChunks.open();
@@ -273,6 +276,7 @@ public final class OldGeneration extends Generation {
         timers.tenuredCompactingUpdatingRemSet.close();
     }
 
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     void releaseSpaces(ChunkReleaser chunkReleaser) {
         // Release empty aligned chunks.
         AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();

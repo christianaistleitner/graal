@@ -28,7 +28,6 @@ import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
 
 import com.oracle.svm.core.AlwaysInline;
-import com.oracle.svm.core.NeverInline;
 import com.oracle.svm.core.UnmanagedMemoryUtil;
 import com.oracle.svm.core.genscavenge.AlignedHeapChunk;
 import com.oracle.svm.core.genscavenge.HeapChunk;
@@ -39,13 +38,12 @@ public class CompactingVisitor implements RelocationInfo.Visitor {
 
     private UnsignedWord top;
 
-    @NeverInline("")
     @Override
     public boolean visit(Pointer p) {
         return visitInline(p);
     }
 
-    @AlwaysInline("")
+    @AlwaysInline("GC performance")
     @Override
     public boolean visitInline(Pointer p) {
         Pointer relocationPointer = RelocationInfo.readRelocationPointer(p);
@@ -85,7 +83,7 @@ public class CompactingVisitor implements RelocationInfo.Visitor {
     /**
      * May return {@code 0} values if there is a gap at chunk start!
      */
-    @AlwaysInline("GC Performance")
+    @AlwaysInline("GC performance")
     private UnsignedWord calculatePlugSize(Pointer relocInfo) {
         Pointer nextRelocInfo = RelocationInfo.getNextRelocationInfo(relocInfo);
         if (nextRelocInfo.isNull()) {

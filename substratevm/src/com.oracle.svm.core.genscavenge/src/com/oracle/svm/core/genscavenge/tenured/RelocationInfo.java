@@ -37,25 +37,53 @@ import com.oracle.svm.core.heap.ObjectVisitor;
 import com.oracle.svm.core.heap.RestrictHeapAccess;
 import com.oracle.svm.core.hub.LayoutEncoding;
 
-/*
+import jdk.graal.compiler.api.replacements.Fold;
+
+/**
+ * The compacting collector needs to define the new location of live objects after compaction.
+ * The GC persists this information directly in front of the corresponding plug using the memory that is currently
+ * occupied by dead objects. As a result, we do not have to store the relocation pointers in the object headers.
+ * <br><br>
+ *
+ * The relocation info structure includes the following fields:
+ * <ul>
+ *     <li>
+ *         Relocation pointer:<br>
+ *         The address (or the offset on EE) of the plug’s new location after compaction.
+ *     </li>
+ *     <li>
+ *         Gap size:<br>
+ *         The size of the gap in which the relocation info resides.
+ *         The plug size can then be calculated using the next offset
+ *         and the gap size from the succeeding relocation info.
+ *     </li>
+ *     <li>
+ *         Next offset:<br>
+ *         The distance between this plug and the next plug.
+ *         The next offset links all relocation info structures in an aligned chunk,
+ *         creating a singly-linked list.
+ *     </li>
+ * </ul>
+ *
  * Binary layout:
  * <pre>
- * 64-bit mode:
+ * With 8-byte object references:
  * +-------------------------+---------------+-----------------------+
  * | relocation pointer (8B) | gap size (4B) | next plug offset (4B) |
  * +-------------------------+---------------+-----------------------+
  *                                                                   ^p
- * 32-bit mode:
+ * With 4-byte object references:
  * +-----------------------------------------------------------------+
  * | relocation pointer (4B) | gap size (2B) | next plug offset (2B) |
  * +-----------------------------------------------------------------+
  *                                                                   ^p
+ * p ... start of the succeeding plug (relocation info fields are accessed using negative offsets)
  * </pre>
  */
 public class RelocationInfo {
 
     public static void writeRelocationPointer(Pointer p, Pointer relocationPointer) {
-        if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
+        if (useCompressedLayout()) {
             long offset = relocationPointer.subtract(p).rawValue();
             offset /= ConfigurationValues.getObjectLayout().getAlignment();
             assert offset == (int) offset : "must fit in 4 bytes";
@@ -67,7 +95,7 @@ public class RelocationInfo {
     }
 
     public static Pointer readRelocationPointer(Pointer p) {
-        if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
+        if (useCompressedLayout()) {
             long offset = p.readInt(-8);
             offset *= ConfigurationValues.getObjectLayout().getAlignment();
             return p.add(WordFactory.signed(offset));
@@ -77,7 +105,7 @@ public class RelocationInfo {
     }
 
     public static void writeGapSize(Pointer p, int gapSize) {
-        if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
+        if (useCompressedLayout()) {
             int data = gapSize / ConfigurationValues.getObjectLayout().getAlignment();
             assert data == (((short) data) & 0xffff) : "must fit in 2 bytes";
             p.writeShort(-4, (short) data);
@@ -88,7 +116,7 @@ public class RelocationInfo {
     }
 
     public static int readGapSize(Pointer p) {
-        if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
+        if (useCompressedLayout()) {
             return (p.readShort(-4) & 0xffff) * ConfigurationValues.getObjectLayout().getAlignment();
         } else {
             return p.readInt(-8);
@@ -96,7 +124,7 @@ public class RelocationInfo {
     }
 
     public static void writeNextPlugOffset(Pointer p, int offset) {
-        if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
+        if (useCompressedLayout()) {
             int data = offset / ConfigurationValues.getObjectLayout().getAlignment();
             assert data == (((short) data) & 0xffff) : "must fit in 2 bytes";
             p.writeShort(-2, (short) data);
@@ -107,7 +135,7 @@ public class RelocationInfo {
     }
 
     public static int readNextPlugOffset(Pointer p) {
-        if (ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES) {
+        if (useCompressedLayout()) {
             return (p.readShort(-2) & 0xffff) * ConfigurationValues.getObjectLayout().getAlignment();
         } else {
             return p.readInt(-4);
@@ -120,6 +148,17 @@ public class RelocationInfo {
             return WordFactory.nullPointer();
         }
         return p.add(offset);
+    }
+
+    /**
+     * The relocation info structure must fit into the smallest possible gap which is 16 bytes,
+     * unless compressed 4-byte object references are enabled, then it is 8 bytes.
+     *
+     * @return {@code true} if the relocation info must fit into 8 bytes.
+     */
+    @Fold
+    private static boolean useCompressedLayout() {
+        return ConfigurationValues.getObjectLayout().getReferenceSize() == Integer.BYTES;
     }
 
     /**
@@ -192,7 +231,7 @@ public class RelocationInfo {
     }
 
     public static int getSize() {
-        return 16; // TODO
+        return useCompressedLayout() ? 8 : 16;
     }
 
     public static void visit(AlignedHeapChunk.AlignedHeader chunk, Visitor visitor) {
