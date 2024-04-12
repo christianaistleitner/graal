@@ -1090,7 +1090,7 @@ public final class GCImpl implements GC {
                  * Thus, we'll forward the object using OldGeneration#promoteAlignedObject and install the forwarding pointer.
                  */
             } else {
-                // Mark objects in the old generation and continue depth-first traversal
+                // Mark objects in the old generation and continue traversal
                 // as referenced objects aren't colored gray by copying!
                 assert originalSpace.isOldSpace();
                 ObjectHeaderImpl.setMarkedBit(original);

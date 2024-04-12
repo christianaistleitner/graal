@@ -153,7 +153,6 @@ public final class OldGeneration extends Generation {
         GCImpl.getGCImpl().getMarkQueue().push(obj);
     }
 
-    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     void planCompaction() {
         // Phase 1: Compute and write relocation info
         planningVisitor.init(space);
@@ -245,7 +244,6 @@ public final class OldGeneration extends Generation {
         timers.tenuredFixingRuntimeCodeCache.close();
     }
 
-    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     void compact(Timers timers) {
         // Phase 3: Copy objects to their new location
         timers.tenuredCompactingChunks.open();
@@ -268,7 +266,8 @@ public final class OldGeneration extends Generation {
         timers.tenuredCompactingUpdatingRemSet.open();
         while (chunk.isNonNull()) {
             // clear CardTable and update FirstObjectTable
-            // TODO: Build the FirstObjectTable during compaction.
+            // TODO: Build the FirstObjectTable during compaction (when completing a chunk and it is in the cache)
+            //  or fixup (in-flight with fixing references) or planning.
             RememberedSet.get().enableRememberedSetForChunk(chunk);
 
             chunk = HeapChunk.getNext(chunk);
@@ -276,7 +275,6 @@ public final class OldGeneration extends Generation {
         timers.tenuredCompactingUpdatingRemSet.close();
     }
 
-    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     void releaseSpaces(ChunkReleaser chunkReleaser) {
         // Release empty aligned chunks.
         AlignedHeapChunk.AlignedHeader aChunk = space.getFirstAlignedHeapChunk();
