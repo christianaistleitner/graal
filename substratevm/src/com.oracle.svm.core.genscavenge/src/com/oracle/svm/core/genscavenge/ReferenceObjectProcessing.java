@@ -202,7 +202,7 @@ final class ReferenceObjectProcessing {
     private static boolean processRememberedRef(Reference<?> dr) {
         Pointer refPointer = ReferenceInternals.getReferentPointer(dr);
 
-        if (SerialGCOptions.compactingOldGen() && GCImpl.getGCImpl().isCompleteCollection()) {
+        if (SerialGCOptions.useCompactingOldGen() && GCImpl.getGCImpl().isCompleteCollection()) {
             if (refPointer.isNull()) {
                 assert GCImpl.getGCImpl().isCompleteCollection() : "Referent is null: should not have been discovered in incremental collection";
                 return false; // Referent has not survived and was set to null during tenured space garbage collection.
@@ -249,7 +249,7 @@ final class ReferenceObjectProcessing {
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     private static boolean willSurviveThisCollection(Object obj) {
-        if (SerialGCOptions.compactingOldGen()) {
+        if (SerialGCOptions.useCompactingOldGen()) {
             if (GCImpl.getGCImpl().isCompleteCollection()) {
                 return ObjectHeaderImpl.hasMarkedBit(obj);
             } else {

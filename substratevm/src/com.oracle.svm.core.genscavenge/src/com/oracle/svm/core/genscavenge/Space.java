@@ -422,11 +422,16 @@ public final class Space {
             ObjectAccess.writeInt(copy, offset, value, IdentityHashCodeSupport.IDENTITY_HASHCODE_LOCATION);
             ObjectHeaderImpl.getObjectHeaderImpl().setIdentityHashInField(copy);
         }
-        if (isOldSpace() && !(SerialGCOptions.compactingOldGen() && GCImpl.getGCImpl().isCompleteCollection())) {
-            // If the object was promoted to the old gen, we need to take care of the remembered
-            // set bit and the first object table (even when promoting from old to old).
-            AlignedHeapChunk.AlignedHeader copyChunk = AlignedHeapChunk.getEnclosingChunk(copy);
-            RememberedSet.get().enableRememberedSetForObject(copyChunk, copy);
+        if (isOldSpace()) {
+            if (SerialGCOptions.useCompactingOldGen() && GCImpl.getGCImpl().isCompleteCollection()) {
+                // Not needed as it was the remembered set bit is set during mark phase
+                // and the first object table built after compaction.
+            } else {
+                // If the object was promoted to the old gen, we need to take care of the remembered
+                // set bit and the first object table (even when promoting from old to old).
+                AlignedHeapChunk.AlignedHeader copyChunk = AlignedHeapChunk.getEnclosingChunk(copy);
+                RememberedSet.get().enableRememberedSetForObject(copyChunk, copy);
+            }
         }
         return copy;
     }

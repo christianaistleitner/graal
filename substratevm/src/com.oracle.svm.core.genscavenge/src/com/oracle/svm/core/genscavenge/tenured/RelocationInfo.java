@@ -49,7 +49,7 @@ import jdk.graal.compiler.api.replacements.Fold;
  * <ul>
  *     <li>
  *         Relocation pointer:<br>
- *         The address (or the offset on EE) of the plug’s new location after compaction.
+ *         The address (or the offset on EE) of the plug's new location after compaction.
  *     </li>
  *     <li>
  *         Gap size:<br>
@@ -81,6 +81,11 @@ import jdk.graal.compiler.api.replacements.Fold;
  * </pre>
  */
 public class RelocationInfo {
+
+    /**
+     * The maximum size of aligned heap chunks based on what the next plug offset with 2 bytes can cover.
+     */
+    public static final int MAX_CHUNK_SIZE = 512 * 1024;
 
     public static void writeRelocationPointer(Pointer p, Pointer relocationPointer) {
         if (useCompressedLayout()) {

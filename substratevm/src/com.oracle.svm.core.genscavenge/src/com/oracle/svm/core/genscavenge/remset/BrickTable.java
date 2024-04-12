@@ -65,7 +65,7 @@ public class BrickTable {
     public static UnsignedWord getLength() {
         UnsignedWord bytesCovered = AlignedHeapChunk.getSizeUsableForObjects();
         UnsignedWord length = bytesCovered.add(BYTES_COVERED_BY_ENTRY - 1).unsignedDivide(BYTES_COVERED_BY_ENTRY);
-        assert length.multiply(ENTRY_SIZE_BYTES).belowThan(AlignedChunkRememberedSet.getCardTableSize()) : "brick table size does not match card table size";
+        assert length.multiply(ENTRY_SIZE_BYTES).belowOrEqual(AlignedChunkRememberedSet.getCardTableSize()) : "brick table size does not match card table size";
         return length;
     }
 

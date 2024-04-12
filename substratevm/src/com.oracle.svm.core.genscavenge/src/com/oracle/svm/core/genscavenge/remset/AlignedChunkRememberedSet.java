@@ -65,7 +65,7 @@ final class AlignedChunkRememberedSet {
     @Fold
     public static UnsignedWord getHeaderSize() {
         UnsignedWord headerSize = getFirstObjectTableLimitOffset();
-        if (SerialGCOptions.compactingOldGen()) {
+        if (SerialGCOptions.useCompactingOldGen()) {
             // Our Mark-and-Compact algorithm requires memory space before the first object
             // for storing relocation info data during complete collections.
             headerSize = headerSize.add(RelocationInfo.getSize());
